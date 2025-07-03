@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "ninth-bonfire-399111",
+  "private_key_id": "b8962690bc0b7cbc84e0e9d820037a19bca3481a",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCg50uroiYIp3/N\nAHHWE/8r5wUk0nEC/hBajeVJ8LuTcbJaizRxvD1116PmRstXYYszZpUVciy0cg58\nkhKXp2tPVTjiWH5GR6Fjm0vMvWHhiPlhaL/IGgIz+XNek+NnOG/n+G86pI78iaTx\nKXHHlg5DIcjdpSquxZUPbQzjwDHfgknXV4AT8IkiCPlu+6PBLDezwWuusHA+naXa\nS1tWKcm1KeixgbI5kQeaqFropdLSBBro4/XZDul2icPvkAM64x5I59WuZTiBGfxh\n9JRabAobvMtmUhfCc90y7QktSWSLcwccOkqMG1fx3a3+QvaU6sb+Y+FHT40jI/y/\nobdDWCNtAgMBAAECggEACRYGlK9k+aG7x2L6Pd4gArKnYugfSZpfNT3eCZbc5y6W\nC71HCnhYYCP7m8ogbjn4sL/4mzifUNemY188SldB6aQkwJaOsUx9aJdUaHNcggfi\nGgYR2yx2acjxIt4aPhhWkwE/oE6HZIT0gEnLpKGfz8EQpRnpylGN+uXSXIOpGh3o\nwjeLH+eVmJQRtrJoqtk5s1iDhh3tJ7pIkJRErvs8RFhPVRMtZaOHR75Sy42Td16q\nRcv6hPcuAZ3w+8IeEEjsAkQAqrmMcTAWlaWx7rX/Nqf7XHtDMwAtOMvh3XGjDJfD\n+Qftq9cpAHfTunAo1t/4qtStzKFUeT1b8lXvjBLQYQKBgQDdNI8D+LfdAoqUuq++\nkjamUsGYcw2Q53L7euKOUiwYU7UKRwgRp/0AP/KiC2Z4q6mfLO77ApH7x4VC/wba\nLvhDINdpjYADkmLxj9Kb5oGVHcDiAeh4dZtLyxdnVkwsVm6IgL8kpSA2Gc5FHRrF\nJWn8/kG6SKwIogbCGJS+39sJswKBgQC6NoS2QDjYYh4qaBXtkDnDa+n9Kgx0efVo\npyB+33j8VtjHWrIfrp9rn9QYB2PxqLI/qLWJ/alTkE7Pg77S/l/ElDJO/1EtGzn9\nsi66R1EzJf6mWBycp0Ij4II3t8HAPjsFIzxC+K/6d9KwVP13Ot/kz/NKp0NC6lqE\nt75eZ/lOXwKBgGwGj9UrsHbRF+Y8KTlS5DdjcMHHZheewAtJ3rwMKxaSQnZLbAhb\nVnW5xP8XvCowAv0GD4srnSktLcojCzCgAYOe1TPp81tLMOCxEPQrpJqy1hBJSEMT\nhAyGmN5RSY/Zgc9NuIrnzQw+m/oqlXkzpUf0zxpvBPyOS+ib4oA4iBp7AoGAM75g\nhFA2O5KQNVJ0/W19T5tWCt47VcZp9imysu6gLOZpGIRQSNN6QyrHgeHT2Nv6pAva\nXjzZZ3oLHEjMps6+h95yWFdEFFejdqajq2mT27WsHEcRtEoZ6+Q/6wGp2iSwu829\nuhJmvB+9sPf88ruuaWOLhGwUGa0LeCOix5L2yNsCgYAlmcWNcJQkBskxN24jc1kH\ntZYX9HrNmi7JyZIJ/YkTM0oDSjqp2e9QIMDg4N3SL+QDP519ji4EKi7pqUgxKXgP\nu4F6K6xj1U0u92p7xipnA+galG7xZDF5adFYdJs2mcMOpuEWPqmhbasvzLPjwjkH\nPCctmMz6xKkxlSNJFOc4SQ==\n-----END PRIVATE KEY-----\n",
+  "client_email": "petrox-materials@ninth-bonfire-399111.iam.gserviceaccount.com",
+  "client_id": "110113915379267398401",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/petrox-materials%40ninth-bonfire-399111.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
