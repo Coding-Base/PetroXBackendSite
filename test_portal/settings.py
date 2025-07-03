@@ -102,7 +102,7 @@ STATIC_ROOT  = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Google Cloud Storage for media
-GCS_CREDENTIALS_PATH = r'C:\Users\USER\Documents\new-backend\test_portal\ninth-bonfire-399111-b8962690bc0b.json'
+GCS_CREDENTIALS_PATH = r'test_portal/MY_CREDENTAIL.JSON'
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
 GOOGLE_APPLICATION_CREDENTIALS = GCS_CREDENTIALS_PATH
 GS_BUCKET_NAME         = 'petrox-materials'
