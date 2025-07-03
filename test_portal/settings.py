@@ -13,7 +13,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY   = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
 DEBUG        = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
-
+ALLOWED_HOSTS = [
+    'petroxtestbackend.onrender.com',
+    'localhost',
+    '127.0.0.1'
+]
 # ─── Applications ────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     # Django core
