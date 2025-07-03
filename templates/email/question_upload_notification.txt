@@ -1,0 +1,10 @@
+New Questions Pending Approval
+
+User: {{ user.username }}
+Course: {{ course.name }}
+Questions Uploaded: {{ count }}
+Filename: {{ filename }}
+
+Please review these questions in the admin panel.
+
+PetroX System Notification
