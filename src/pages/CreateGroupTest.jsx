@@ -24,7 +24,7 @@ export default function CreateGroupTest() {
     const fetchCourses = async () => {
       try {
         const token = localStorage.getItem('access_token');
-        const res = await axios.get('http://127.0.0.1:8000/api/courses/', {
+        const res = await axios.get('https://petroxtestbackend.onrender.com/api/courses/', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setCourses(res.data);
