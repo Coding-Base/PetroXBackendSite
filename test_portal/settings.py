@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
+from datetime import timedelta
 
 # ─── Load .env ───────────────────────────────────────────────────────────────
 load_dotenv()
@@ -10,13 +11,17 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ─── Security ────────────────────────────────────────────────────────────────
-SECRET_KEY   = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
-DEBUG        = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
+
+# FIXED: Allow all for testing, or specify Render domain
+ALLOWED_HOSTS = ['*']
+
+# CSRF TRUSTED ORIGINS for production login
+CSRF_TRUSTED_ORIGINS = ['https://petroxtestbackend.onrender.com']
 
 # ─── Applications ────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
-    # Django core
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -24,14 +29,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    # Third‑party
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
     'storages',
 
-    # Your apps
     'exams',
 ]
 
@@ -39,7 +42,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',              # CORS first
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -54,8 +57,6 @@ WSGI_APPLICATION = 'test_portal.wsgi.application'
 ASGI_APPLICATION = 'test_portal.asgi.application'
 
 # ─── Database ────────────────────────────────────────────────────────────────
-# Expect DATABASE_URL like:
-#   postgres://user:pass@host:port/dbname?sslmode=require
 if DEBUG:
     DATABASES = {
         'default': {
@@ -79,7 +80,6 @@ REST_FRAMEWORK = {
     ],
 }
 
-from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -88,30 +88,27 @@ SIMPLE_JWT = {
 }
 
 # ─── CORS ───────────────────────────────────────────────────────────────────
-CORS_ALLOW_ALL_ORIGINS = True   # tighten in prod
-CORS_ALLOW_METHODS = [
-    'DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT',
-]
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 CORS_ALLOW_HEADERS = [
     'accept', 'accept-encoding', 'authorization', 'content-type',
     'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
 ]
 
 # ─── Static & Media ─────────────────────────────────────────────────────────
-STATIC_URL   = '/static/'
-STATIC_ROOT  = BASE_DIR / 'staticfiles'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# Google Cloud Storage for media
-GCS_CREDENTIALS_PATH = r'C:\Users\USER\Documents\new-backend\test_portal\ninth-bonfire-399111-b8962690bc0b.json'
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
-GOOGLE_APPLICATION_CREDENTIALS = GCS_CREDENTIALS_PATH
-GS_BUCKET_NAME         = 'petrox-materials'
-# GCS_CREDENTIALS_PATH   = os.getenv('GCS_CREDENTIALS_PATH')  # point this in your env
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
-DEFAULT_FILE_STORAGE   = 'storages.backends.gcloud.GoogleCloudStorage'
-MEDIA_URL              = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/'
-GS_DEFAULT_ACL         = None
+# ─── Google Cloud Storage for Media ──────────────────────────────────────────
+GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')  # now dynamic
+if GCS_CREDENTIALS_PATH:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
+
+GS_BUCKET_NAME = 'petrox-materials'
+DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
+MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/'
+GS_DEFAULT_ACL = None
 
 # ─── Channels ────────────────────────────────────────────────────────────────
 CHANNEL_LAYERS = {
@@ -122,30 +119,31 @@ CHANNEL_LAYERS = {
 
 # ─── Internationalization ────────────────────────────────────────────────────
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE     = 'UTC'
-USE_I18N      = True
-USE_TZ        = True
+TIME_ZONE = 'UTC'
+USE_I18N = True
+USE_TZ = True
 
 # ─── Email ──────────────────────────────────────────────────────────────────
-EMAIL_BACKEND    = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST       = 'smtp.gmail.com'
-EMAIL_PORT       = 465
-EMAIL_USE_TLS    = False
-EMAIL_USE_SSL    = True
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 465
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = True
 EMAIL_HOST_USER = 'thecbsteam8@gmail.com'
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD')
-DEFAULT_FROM_EMAIL  = 'Petrox Assessment <thecbsteam8@gmail.com>'
+DEFAULT_FROM_EMAIL = 'Petrox Assessment <thecbsteam8@gmail.com>'
 
-# Link back to your React frontend
+# ─── Frontend Domain ────────────────────────────────────────────────────────
 FRONTEND_DOMAIN = os.getenv('FRONTEND_DOMAIN', 'http://localhost:3000')
 
 # ─── Production Security Enhancements ───────────────────────────────────────
 if not DEBUG:
-    SECURE_SSL_REDIRECT       = True
-    SESSION_COOKIE_SECURE     = True
-    CSRF_COOKIE_SECURE        = True
-    SECURE_PROXY_SSL_HEADER   = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# ─── Templates ──────────────────────────────────────────────────────────────
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
