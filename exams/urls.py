@@ -20,35 +20,13 @@ from .views.sessions import (
 )
 from .views.group_tests import CreateGroupTestAPIView, GroupTestDetailAPIView
 from .views.leaderboard import LeaderboardAPIView, user_rank, user_upload_stats
-# exams/urls.py
-
-# from .views import (
-#     RegisterUserAPIView,
-#     CourseListAPIView,
-#     MaterialUploadView,
-#     MaterialDownloadView,
-#     MaterialSearchView,
-#     AddQuestionAPIView,
-#     StartTestAPIView,
-#     SubmitTestAPIView,
-#     TestHistoryAPIView,
-#     TestSessionDetailAPIView,
-#     CreateGroupTestAPIView,
-#     GroupTestDetailAPIView,
-#     LeaderboardAPIView,
-#     user_rank,
-#     PreviewPassQuestionsView,
-#     UploadPassQuestionsView,
-#     QuestionApprovalView,
-#     user_upload_stats
-# )
 
 urlpatterns = [
     path('users/', RegisterUserAPIView.as_view(), name='register-user'),
     path('materials/upload/', MaterialUploadView.as_view(), name='material-upload'),
     path('materials/download/<int:pk>/', MaterialDownloadView.as_view(), name='material-download'),
     path('materials/search/', MaterialSearchView.as_view(), name='material-search'),
-    path('/api/courses/', CourseListAPIView.as_view(), name='course-list'),
+    path('courses/', CourseListAPIView.as_view(), name='course-list'),
     path('admin/add-question/', AddQuestionAPIView.as_view(), name='add-question'),
     path('start-test/', StartTestAPIView.as_view(), name='start-test'),
     path('submit-test/<int:session_id>/', SubmitTestAPIView.as_view(), name='submit-test'),
