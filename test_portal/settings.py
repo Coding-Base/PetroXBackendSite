@@ -13,11 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY   = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
 DEBUG        = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
-ALLOWED_HOSTS = [
-    'petroxtestbackend.onrender.com',
-    'localhost',
-    '127.0.0.1'
-]
+
 # ─── Applications ────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     # Django core
@@ -42,6 +38,7 @@ INSTALLED_APPS = [
 # ─── Middleware ──────────────────────────────────────────────────────────────
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',              # CORS first
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -106,7 +103,7 @@ STATIC_ROOT  = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Google Cloud Storage for media
-GCS_CREDENTIALS_PATH = r'test_portal/MY_CREDENTAIL.JSON'
+GCS_CREDENTIALS_PATH = r'C:\Users\USER\Documents\new-backend\test_portal\ninth-bonfire-399111-b8962690bc0b.json'
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
 GOOGLE_APPLICATION_CREDENTIALS = GCS_CREDENTIALS_PATH
 GS_BUCKET_NAME         = 'petrox-materials'
