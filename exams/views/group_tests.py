@@ -52,7 +52,7 @@ class CreateGroupTestAPIView(APIView):
                 question_count=question_count,
                 duration_minutes=duration_minutes,
                 created_by=request.user,
-                invitees=",".join(invitees_list),
+                invitees=",".join(invitees_list) if invitees_list else "",
                 scheduled_start=scheduled_start
             )
         except Exception as e:
@@ -61,6 +61,7 @@ class CreateGroupTestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Only send emails if invitees are provided (i.e., group test)
         if invitees_list:
             try:
                 subject = f"Invitation to Group Test: {group_test.name}"
@@ -89,6 +90,7 @@ class CreateGroupTestAPIView(APIView):
             except Exception as e:
                 print(f"Error sending emails: {e}")
 
+        # Always return the test ID and info, whether personal or group
         return Response({
             'id': group_test.id,
             'name': group_test.name,
