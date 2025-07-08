@@ -7,11 +7,21 @@ from google.oauth2 import service_account
 from google.auth.exceptions import RefreshError, DefaultCredentialsError
 from google.api_core.exceptions import NotFound, ServiceUnavailable
 from datetime import datetime, timezone
+import time
 
 logger = logging.getLogger(__name__)
 
 class GoogleCloudMediaStorage(Storage):
+    _client = None
+    _bucket = None
+    _initialized = False
+    
     def __init__(self):
+        # Use lazy initialization
+        if not GoogleCloudMediaStorage._initialized:
+            self._initialize_storage()
+    
+    def _initialize_storage(self):
         try:
             # Validate environment variables
             if "GCS_CREDENTIALS_JSON" not in os.environ:
@@ -22,45 +32,59 @@ class GoogleCloudMediaStorage(Storage):
             credentials_info = json.loads(os.environ["GCS_CREDENTIALS_JSON"])
             bucket_name = os.environ["GS_BUCKET_NAME"]
             
-            # Check system time synchronization
-            current_time = datetime.now(timezone.utc)
-            logger.info(f"Current system time: {current_time}")
-            
-            # Create credentials with explicit scopes
-            credentials = service_account.Credentials.from_service_account_info(
-                credentials_info,
-                scopes=["https://www.googleapis.com/auth/devstorage.full_control"]
-            )
-            
-            self.client = storage.Client(
-                credentials=credentials,
-                project=credentials_info.get('project_id')
-            )
-            self.bucket = self.client.bucket(bucket_name)
-            
-            # Verify bucket accessibility
-            if not self.bucket.exists():
-                raise ServiceUnavailable(f"Bucket {bucket_name} does not exist or is inaccessible")
-                
-            logger.info(f"Successfully connected to GCS bucket: {bucket_name}")
-            
+            # Retry mechanism for credential initialization
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Create credentials with explicit scopes
+                    credentials = service_account.Credentials.from_service_account_info(
+                        credentials_info,
+                        scopes=["https://www.googleapis.com/auth/devstorage.full_control"]
+                    )
+                    
+                    # Create client with explicit project ID
+                    GoogleCloudMediaStorage._client = storage.Client(
+                        credentials=credentials,
+                        project=credentials_info.get('project_id')
+                    )
+                    GoogleCloudMediaStorage._bucket = GoogleCloudMediaStorage._client.bucket(bucket_name)
+                    
+                    # Verify bucket accessibility
+                    if not GoogleCloudMediaStorage._bucket.exists():
+                        raise ServiceUnavailable(f"Bucket {bucket_name} does not exist or is inaccessible")
+                    
+                    logger.info(f"Successfully connected to GCS bucket: {bucket_name}")
+                    GoogleCloudMediaStorage._initialized = True
+                    return
+                    
+                except (ServiceUnavailable, DefaultCredentialsError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff
+                        logger.warning(f"Storage initialization failed (attempt {attempt+1}), retrying in {wait_time}s: {str(e)}")
+                        time.sleep(wait_time)
+                    else:
+                        raise
+                        
         except (json.JSONDecodeError, KeyError) as e:
             logger.error(f"Invalid credentials configuration: {str(e)}")
             raise ValueError("Invalid GCS credentials configuration") from e
-        except DefaultCredentialsError as e:
-            logger.error(f"Google authentication error: {str(e)}")
-            raise PermissionError("Google Cloud authentication failed") from e
         except Exception as e:
             logger.error(f"Storage initialization error: {str(e)}")
             raise ServiceUnavailable(f"Storage service unavailable: {str(e)}") from e
 
+    def _get_bucket(self):
+        if not GoogleCloudMediaStorage._initialized:
+            self._initialize_storage()
+        return GoogleCloudMediaStorage._bucket
+
     def _save(self, name, content):
         try:
-            blob = self.bucket.blob(name)
+            bucket = self._get_bucket()
+            blob = bucket.blob(name)
             blob.upload_from_file(
                 content,
                 content_type=content.content_type,
-                timeout=300  # Increase timeout for large files
+                timeout=300
             )
             return name
         except RefreshError as e:
@@ -75,7 +99,8 @@ class GoogleCloudMediaStorage(Storage):
 
     def exists(self, name):
         try:
-            return self.bucket.blob(name).exists()
+            bucket = self._get_bucket()
+            return bucket.blob(name).exists()
         except NotFound:
             return False
         except Exception as e:
@@ -83,18 +108,21 @@ class GoogleCloudMediaStorage(Storage):
             raise ServiceUnavailable("Storage service unavailable") from e
 
     def url(self, name):
-        return f"https://storage.googleapis.com/{self.bucket.name}/{name}"
+        bucket = self._get_bucket()
+        return f"https://storage.googleapis.com/{bucket.name}/{name}"
 
     def delete(self, name):
         try:
-            self.bucket.blob(name).delete()
+            bucket = self._get_bucket()
+            bucket.blob(name).delete()
         except Exception as e:
             logger.error(f"GCS delete error: {str(e)}")
             raise e
 
     def size(self, name):
         try:
-            blob = self.bucket.blob(name)
+            bucket = self._get_bucket()
+            blob = bucket.blob(name)
             blob.reload()
             return blob.size
         except Exception as e:
@@ -103,7 +131,8 @@ class GoogleCloudMediaStorage(Storage):
 
     def get_modified_time(self, name):
         try:
-            blob = self.bucket.blob(name)
+            bucket = self._get_bucket()
+            blob = bucket.blob(name)
             blob.reload()
             return blob.updated
         except Exception as e:
@@ -111,13 +140,7 @@ class GoogleCloudMediaStorage(Storage):
             raise e
 
     def path(self, name):
-        """
-        This method is not implemented for cloud storage
-        """
         raise NotImplementedError("Cloud storage doesn't support local paths")
 
     def open(self, name, mode='rb'):
-        """
-        This method is not implemented for cloud storage
-        """
         raise NotImplementedError("Cloud storage doesn't support direct file opening")
