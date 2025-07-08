@@ -52,7 +52,7 @@ class CreateGroupTestAPIView(APIView):
                 question_count=question_count,
                 duration_minutes=duration_minutes,
                 created_by=request.user,
-                invitees=",".join(invitees_list) if invitees_list else "",
+                invitees=",".join(invitees_list),
                 scheduled_start=scheduled_start
             )
         except Exception as e:
@@ -61,7 +61,6 @@ class CreateGroupTestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Only send emails if invitees are provided (i.e., group test)
         if invitees_list:
             try:
                 subject = f"Invitation to Group Test: {group_test.name}"
@@ -90,7 +89,6 @@ class CreateGroupTestAPIView(APIView):
             except Exception as e:
                 print(f"Error sending emails: {e}")
 
-        # Always return the test ID and info, whether personal or group
         return Response({
             'id': group_test.id,
             'name': group_test.name,
@@ -139,10 +137,11 @@ class GroupTestDetailAPIView(APIView):
                 q_list.append({
                     'id': q.id,
                     'question_text': q.question_text,
-                    'option_a': q.option_a,
-                    'option_b': q.option_b,
-                    'option_c': q.option_c,
-                    'option_d': q.option_d,
+                    'option_a': getattr(q, 'option_a', '') or '',
+                    'option_b': getattr(q, 'option_b', '') or '',
+                    'option_c': getattr(q, 'option_c', '') or '',
+                    'option_d': getattr(q, 'option_d', '') or '',
+                    'correct_option': getattr(q, 'correct_option', '') or '',  # Include correct_option if present
                 })
 
             data['questions'] = q_list
