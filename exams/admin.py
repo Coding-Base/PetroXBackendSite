@@ -46,6 +46,11 @@ class QuestionAdmin(admin.ModelAdmin):
     list_display = (
         'id', 
         'truncated_question', 
+        'option_a',           # Add this
+        'option_b',           # Add this
+        'option_c',           # Add this
+        'option_d',           # Add this
+        'correct_option',     # Add this
         'course', 
         'status_badge', 
         'uploaded_by',
