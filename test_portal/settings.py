@@ -14,10 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-# FIXED: Allow all for testing, or specify Render domain
 ALLOWED_HOSTS = ['*']
-
-# CSRF TRUSTED ORIGINS for production login
 CSRF_TRUSTED_ORIGINS = ['https://petroxtestbackend.onrender.com']
 
 # ─── Applications ────────────────────────────────────────────────────────────
@@ -33,7 +30,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
-    'storages',
 
     'exams',
 ]
@@ -101,14 +97,23 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ─── Google Cloud Storage for Media ──────────────────────────────────────────
-GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')  # now dynamic
-if GCS_CREDENTIALS_PATH:
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
+# Remove the old GCS configuration and replace with:
+STORAGES = {
+    "default": {
+        "BACKEND": "exams.storage_backends.GoogleCloudMediaStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
-GS_BUCKET_NAME = 'petrox-materials'
-DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
-MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/'
-GS_DEFAULT_ACL = None
+# Media settings
+MEDIA_URL = 'https://storage.googleapis.com/petrox-materials/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# File upload settings
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 50  # 50MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 50  # 50MB
 
 # ─── Channels ────────────────────────────────────────────────────────────────
 CHANNEL_LAYERS = {
