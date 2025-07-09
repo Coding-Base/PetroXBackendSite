@@ -4,6 +4,34 @@ from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
 
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',  # Or 'INFO', 'WARNING', 'ERROR', etc.
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'  # Or 'simple'
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # Or 'INFO', 'WARNING', 'ERROR', etc.
+    },
+}
+
+
 # ─── Load .env ───────────────────────────────────────────────────────────────
 load_dotenv()
 
