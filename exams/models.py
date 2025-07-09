@@ -1,15 +1,11 @@
 from django.db import models
 from django.contrib.auth.models import User
-# from .storage_backends import GoogleCloudMediaStorage
 from django.conf import settings
-
-
-
 
 class Course(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    status = models.CharField(max_length=20, default='approved')  # Add this line
+    status = models.CharField(max_length=20, default='approved')
 
     def __str__(self):
         return self.name
@@ -48,9 +44,6 @@ class Question(models.Model):
     
     def __str__(self):
         return self.question_text[:50]
-    
-    def __str__(self):
-        return self.question_text[:50]
 
 class TestSession(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -74,10 +67,9 @@ class GroupTest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     invitees = models.TextField()  # Comma-separated emails
     scheduled_start = models.DateTimeField()
+    
     def __str__(self):
         return self.name
-from .storage_backends import GoogleCloudMediaStorage
-from django.conf import settings
 
 class Material(models.Model):
     course = models.ForeignKey('Course', on_delete=models.CASCADE)
@@ -85,7 +77,7 @@ class Material(models.Model):
     tags = models.CharField(max_length=255, blank=True)
     file = models.FileField(
         upload_to='materials/',
-        storage=GoogleCloudMediaStorage()
+        storage='exams.storage_backends.GoogleCloudMediaStorage'  # Fixed: use string path
     )
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     uploaded_at = models.DateTimeField(auto_now_add=True)
