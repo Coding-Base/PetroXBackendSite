@@ -29,6 +29,16 @@ class GoogleCloudMediaStorage(Storage):
         # Use lazy initialization - no heavy operations in constructor
         pass
     
+    def deconstruct(self):
+        """
+        Required for Django migrations to serialize the storage class
+        """
+        return (
+            'exams.storage_backends.GoogleCloudMediaStorage',
+            [],
+            {}
+        )
+    
     def _initialize_storage(self):
         """Initialize GCS connection with robust error handling and validation"""
         if GoogleCloudMediaStorage._initialized:
