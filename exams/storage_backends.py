@@ -1,38 +1,32 @@
 # exams/storage_backends.py
+import os
+import json
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from google.cloud import storage
 from django.core.files.storage import Storage
 from django.utils.deconstruct import deconstructible
 from google.oauth2 import service_account
 from google.api_core.exceptions import NotFound
-from django.core.exceptions import ImproperlyConfigured
-import os
 
 @deconstructible
 class GoogleCloudMediaStorage(Storage):
     def __init__(self):
-        # Lazy initialization - don't access settings here
+        # Store credentials value but don't process it yet
+        self.creds_value = getattr(settings, 'GOOGLE_APPLICATION_CREDENTIALS', None)
         self._client = None
         self._bucket = None
+        
+        if not self.creds_value:
+            raise ImproperlyConfigured(
+                "GOOGLE_APPLICATION_CREDENTIALS setting is not configured"
+            )
 
     @property
     def client(self):
         """Lazy-loaded GCS client"""
         if self._client is None:
-            creds_path = getattr(settings, 'GOOGLE_APPLICATION_CREDENTIALS', None)
-            
-            if not creds_path:
-                raise ImproperlyConfigured(
-                    "GOOGLE_APPLICATION_CREDENTIALS setting is not configured"
-                )
-            
-            if not os.path.exists(creds_path):
-                raise ImproperlyConfigured(
-                    f"GCS credentials file not found at: {creds_path}"
-                )
-                
-            credentials = service_account.Credentials.from_service_account_file(creds_path)
-            self._client = storage.Client(credentials=credentials)
+            self._client = storage.Client(credentials=self._get_credentials())
         return self._client
 
     @property
@@ -42,6 +36,20 @@ class GoogleCloudMediaStorage(Storage):
             bucket_name = getattr(settings, 'GS_BUCKET_NAME', 'petrox-materials')
             self._bucket = self.client.bucket(bucket_name)
         return self._bucket
+
+    def _get_credentials(self):
+        """Handle both file paths and JSON credential strings"""
+        try:
+            # First try to parse as JSON
+            creds_json = json.loads(self.creds_value)
+            return service_account.Credentials.from_service_account_info(creds_json)
+        except json.JSONDecodeError:
+            # If not JSON, treat as file path
+            if os.path.exists(self.creds_value):
+                return service_account.Credentials.from_service_account_file(self.creds_value)
+            raise ImproperlyConfigured(
+                f"GCS credentials not found at: {self.creds_value} and not valid JSON"
+            )
 
     def _save(self, name, content):
         blob = self.bucket.blob(name)
