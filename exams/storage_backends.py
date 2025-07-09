@@ -4,28 +4,18 @@ import logging
 from django.core.files.storage import Storage
 from google.cloud import storage
 from google.oauth2 import service_account
-from google.auth.exceptions import RefreshError, DefaultCredentialsError
+from google.auth.exceptions import RefreshError
 from google.api_core.exceptions import NotFound, ServiceUnavailable
 from datetime import datetime, timezone
-import time
-import jwt
-import requests
-import socket
-import struct
 
 logger = logging.getLogger(__name__)
 
-# Constants for NTP time synchronization
-NTP_SERVER = "pool.ntp.org"
-NTP_PORT = 123
-NTP_DELTA = 2208988800  # 1970-01-01 00:00:00 in NTP seconds
-
 class GoogleCloudMediaStorage(Storage):
     def __init__(self):
-        # Simplified initialization - no heavy operations in constructor
         self._client = None
         self._bucket = None
-    
+        self._initialized = False
+
     def deconstruct(self):
         """
         Required for Django migrations to serialize the storage class
@@ -35,232 +25,141 @@ class GoogleCloudMediaStorage(Storage):
             [],
             {}
         )
-    
-    def _get_client(self):
-        """Get or create the storage client"""
-        if self._client is None:
-            self._initialize_storage()
-        return self._client
 
-    def _get_bucket(self):
-        """Get or create the bucket instance"""
-        if self._bucket is None:
-            self._initialize_storage()
-        return self._bucket
-
-    def _initialize_storage(self):
-        """Initialize GCS connection with robust error handling and validation"""
-        try:
-            # 1. Verify environment variables exist
-            if "GCS_CREDENTIALS_JSON" not in os.environ:
-                raise ValueError("GCS_CREDENTIALS_JSON environment variable not set")
-            if "GS_BUCKET_NAME" not in os.environ:
-                raise ValueError("GS_BUCKET_NAME environment variable not set")
-            
-            credentials_json = os.environ["GCS_CREDENTIALS_JSON"]
-            bucket_name = os.environ["GS_BUCKET_NAME"]
-            
-            # 2. Validate JSON format
+    def _initialize(self):
+        """Lazy initialization of GCS client and bucket"""
+        if not self._initialized:
             try:
+                # Get credentials from environment variable
+                credentials_json = os.environ.get('GCS_CREDENTIALS_JSON')
+                if not credentials_json:
+                    raise ValueError("GCS_CREDENTIALS_JSON environment variable not set")
+                
                 credentials_info = json.loads(credentials_json)
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in credentials: {str(e)}")
-                raise ValueError("Invalid JSON format in GCS_CREDENTIALS_JSON") from e
-            
-            # 3. Verify required credential fields
-            required_keys = ["type", "project_id", "private_key_id", "private_key", "client_email"]
-            for key in required_keys:
-                if key not in credentials_info:
-                    logger.error(f"Missing required key in credentials: {key}")
-                    raise ValueError(f"Missing required key in credentials: {key}")
-            
-            # 4. Validate private key format
-            private_key = credentials_info["private_key"]
-            if not private_key.startswith("-----BEGIN PRIVATE KEY-----") or \
-               not private_key.endswith("-----END PRIVATE KEY-----"):
-                logger.error("Private key is not in PEM format")
-                raise ValueError("Private key must be in PEM format")
-            
-            # 5. Verify system time is synchronized (critical for JWT)
-            self._check_time_synchronization()
-            
-            # 6. Test JWT signature creation
-            self._test_jwt_signature(credentials_info)
-            
-            # 7. Create credentials with retry
-            credentials = self._create_credentials_with_retry(credentials_info)
-            
-            # 8. Initialize client and verify bucket
-            self._client = storage.Client(
-                credentials=credentials,
-                project=credentials_info.get('project_id')
-            )
-            self._bucket = self._client.bucket(bucket_name)
-            
-            if not self._bucket.exists():
-                raise ServiceUnavailable(f"Bucket {bucket_name} does not exist or is inaccessible")
-            
-            logger.info(f"Successfully connected to GCS bucket: {bucket_name}")
-            
-        except Exception as e:
-            logger.error(f"Storage initialization error: {str(e)}")
-            raise ServiceUnavailable(f"Storage service unavailable: {str(e)}") from e
+                bucket_name = os.environ.get('GS_BUCKET_NAME')
+                if not bucket_name:
+                    raise ValueError("GS_BUCKET_NAME environment variable not set")
 
-    def _check_time_synchronization(self):
-        """Verify system time is synchronized with NTP server"""
-        try:
-            # Get NTP time
-            ntp_time = self._get_ntp_time()
-            system_time = datetime.now(timezone.utc)
-            
-            # Calculate time difference
-            time_diff = (system_time - ntp_time).total_seconds()
-            logger.info(f"System time: {system_time}, NTP time: {ntp_time}, Difference: {time_diff:.2f} seconds")
-            
-            # Warn if difference is significant
-            if abs(time_diff) > 30:  # 30 seconds threshold
-                logger.warning(f"System time is out of sync by {time_diff:.2f} seconds. JWT may fail!")
-        except Exception as e:
-            logger.error(f"Time synchronization check failed: {str(e)}")
-            # Continue even if time sync fails - just log the error
-
-    def _get_ntp_time(self):
-        """Get current time from NTP server"""
-        try:
-            client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            client.settimeout(3)  # Reduced timeout
-            data = b'\x1b' + 47 * b'\0'
-            client.sendto(data, (NTP_SERVER, NTP_PORT))
-            data, _ = client.recvfrom(1024)
-            
-            if data:
-                t = struct.unpack('!12I', data)[10]
-                t -= NTP_DELTA
-                return datetime.utcfromtimestamp(t).replace(tzinfo=timezone.utc)
-        except Exception as e:
-            logger.error(f"NTP request failed: {str(e)}")
-            # Return current time if NTP fails
-            return datetime.now(timezone.utc)
-        
-        return datetime.now(timezone.utc)  # Fallback to current time
-
-    def _test_jwt_signature(self, credentials_info):
-        """Test JWT signature creation with the private key"""
-        try:
-            test_jwt = jwt.encode(
-                {"test": "payload", "iat": int(time.time())},
-                credentials_info["private_key"],
-                algorithm="RS256",
-                headers={"kid": credentials_info["private_key_id"]}
-            )
-            logger.debug("JWT test encoding successful")
-            return True
-        except jwt.PyJWTError as e:
-            logger.error(f"JWT encoding test failed: {str(e)}")
-            raise ValueError("Invalid private key format") from e
-        except Exception as e:
-            logger.error(f"Unexpected JWT test error: {str(e)}")
-            raise
-
-    def _create_credentials_with_retry(self, credentials_info, max_retries=3):
-        """Create credentials with exponential backoff"""
-        for attempt in range(max_retries):
-            try:
+                # Create credentials
                 credentials = service_account.Credentials.from_service_account_info(
                     credentials_info,
                     scopes=["https://www.googleapis.com/auth/devstorage.full_control"]
                 )
-                
-                # Test credentials by refreshing token
-                request = requests.Request()
-                credentials.refresh(request)
-                logger.info("Google authentication test successful")
-                return credentials
-            except (ServiceUnavailable, DefaultCredentialsError) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Authentication failed (attempt {attempt+1}), retrying in {wait_time}s: {str(e)}")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Google authentication failed after {max_retries} attempts")
-                    raise ServiceUnavailable("Google authentication failed") from e
+
+                # Initialize client and bucket
+                self._client = storage.Client(
+                    credentials=credentials,
+                    project=credentials_info.get('project_id')
+                )
+                self._bucket = self._client.bucket(bucket_name)
+
+                # Verify bucket exists
+                if not self._bucket.exists():
+                    raise ServiceUnavailable(f"Bucket {bucket_name} does not exist or is inaccessible")
+
+                logger.info(f"Successfully connected to GCS bucket: {bucket_name}")
+                self._initialized = True
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in credentials: {str(e)}")
+                raise ValueError("Invalid GCS credentials configuration") from e
             except Exception as e:
-                logger.error(f"Unexpected authentication error: {str(e)}")
-                raise
+                logger.error(f"Storage initialization error: {str(e)}")
+                raise ServiceUnavailable(f"Storage service unavailable: {str(e)}") from e
 
     def _save(self, name, content):
-        """Save file to GCS with robust error handling"""
+        """Save file to GCS"""
         try:
-            bucket = self._get_bucket()
-            blob = bucket.blob(name)
+            self._initialize()
+            blob = self._bucket.blob(name)
             
-            # Upload with increased timeout
+            # Get content type if available
+            content_type = getattr(content, 'content_type', None)
+            
             blob.upload_from_file(
                 content,
-                content_type=content.content_type,
-                timeout=300  # 5 minutes
+                content_type=content_type,
+                timeout=300  # 5 minute timeout
             )
             return name
         except RefreshError as e:
-            logger.error(f"JWT token refresh failed: {str(e)}")
+            logger.error(f"Authentication token expired: {str(e)}")
             raise PermissionError("Google Cloud authentication token expired") from e
         except ServiceUnavailable as e:
             logger.error(f"GCS service unavailable: {str(e)}")
             raise ServiceUnavailable("Google Cloud Storage service is currently unavailable") from e
         except Exception as e:
-            logger.error(f"GCS upload error: {str(e)}")
+            logger.error(f"File upload failed: {str(e)}")
             raise RuntimeError(f"File upload failed: {str(e)}") from e
 
     def exists(self, name):
+        """Check if file exists in GCS"""
         try:
-            bucket = self._get_bucket()
-            return bucket.blob(name).exists()
+            self._initialize()
+            return self._bucket.blob(name).exists()
         except NotFound:
             return False
         except Exception as e:
-            logger.error(f"GCS existence check error: {str(e)}")
+            logger.error(f"Existence check failed: {str(e)}")
             raise ServiceUnavailable("Storage service unavailable") from e
 
     def url(self, name):
-        bucket = self._get_bucket()
-        return f"https://storage.googleapis.com/{bucket.name}/{name}"
+        """Get public URL for the file"""
+        self._initialize()
+        return f"https://storage.googleapis.com/{self._bucket.name}/{name}"
 
     def delete(self, name):
+        """Delete file from GCS"""
         try:
-            bucket = self._get_bucket()
-            bucket.blob(name).delete()
+            self._initialize()
+            self._bucket.blob(name).delete()
         except Exception as e:
-            logger.error(f"GCS delete error: {str(e)}")
-            raise e
+            logger.error(f"File deletion failed: {str(e)}")
+            raise
 
     def size(self, name):
+        """Get file size in bytes"""
         try:
-            bucket = self._get_bucket()
-            blob = bucket.blob(name)
-            blob.reload()
+            self._initialize()
+            blob = self._bucket.blob(name)
+            blob.reload()  # Refresh metadata
             return blob.size
         except Exception as e:
-            logger.error(f"GCS size check error: {str(e)}")
-            raise e
+            logger.error(f"Size check failed: {str(e)}")
+            raise
 
     def get_modified_time(self, name):
+        """Get last modified time"""
         try:
-            bucket = self._get_bucket()
-            blob = bucket.blob(name)
-            blob.reload()
+            self._initialize()
+            blob = self._bucket.blob(name)
+            blob.reload()  # Refresh metadata
             return blob.updated
         except Exception as e:
-            logger.error(f"GCS modified time check error: {str(e)}")
-            raise e
+            logger.error(f"Modified time check failed: {str(e)}")
+            raise
 
     def path(self, name):
+        """Not implemented for cloud storage"""
         raise NotImplementedError("Cloud storage doesn't support local paths")
 
     def open(self, name, mode='rb'):
+        """Open file from GCS"""
         try:
-            bucket = self._get_bucket()
-            blob = bucket.blob(name)
+            self._initialize()
+            blob = self._bucket.blob(name)
             return blob.open(mode)
         except Exception as e:
-            logger.error(f"GCS open error: {str(e)}")
+            logger.error(f"File open failed: {str(e)}")
+            raise
+
+    def get_created_time(self, name):
+        """Get creation time"""
+        try:
+            self._initialize()
+            blob = self._bucket.blob(name)
+            blob.reload()  # Refresh metadata
+            return blob.time_created
+        except Exception as e:
+            logger.error(f"Created time check failed: {str(e)}")
             raise
