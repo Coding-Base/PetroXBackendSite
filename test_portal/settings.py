@@ -14,7 +14,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
+# FIXED: Allow all for testing, or specify Render domain
 ALLOWED_HOSTS = ['*']
+
+# CSRF TRUSTED ORIGINS for production login
 CSRF_TRUSTED_ORIGINS = ['https://petroxtestbackend.onrender.com']
 
 # ─── Applications ────────────────────────────────────────────────────────────
@@ -30,8 +33,9 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
-
+    'storages',
     'exams',
+    
 ]
 
 # ─── Middleware ──────────────────────────────────────────────────────────────
@@ -94,26 +98,23 @@ CORS_ALLOW_HEADERS = [
 # ─── Static & Media ─────────────────────────────────────────────────────────
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# ─── Google Cloud Storage for Media ──────────────────────────────────────────
-# Remove the old GCS configuration and replace with:
+# ─── Storage (Static & Media) ──────────────────────────────────────────
+# The STORAGES setting (new in Django 4.2) replaces STATICFILES_STORAGE and DEFAULT_FILE_STORAGE.
 STORAGES = {
-    "default": {
-        "BACKEND": "exams.storage_backends.GoogleCloudMediaStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
+    # Default storage for media files (Google Cloud Storage)
+    "default": {"BACKEND": "storages.backends.gcloud.GoogleCloudStorage"},
+    # Storage for static files (Whitenoise)
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
-# Media settings
-MEDIA_URL = 'https://storage.googleapis.com/petrox-materials/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')  # now dynamic
+if GCS_CREDENTIALS_PATH:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
 
-# File upload settings
-DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 50  # 50MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 50  # 50MB
+GS_BUCKET_NAME = 'petrox-materials'
+MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/'
+GS_DEFAULT_ACL = None
 
 # ─── Channels ────────────────────────────────────────────────────────────────
 CHANNEL_LAYERS = {
