@@ -77,7 +77,7 @@ class Material(models.Model):
     tags = models.CharField(max_length=255, blank=True)
     file = models.FileField(
         upload_to='materials/',
-        storage='exams.storage_backends.GoogleCloudMediaStorage'  # Fixed: use string path
+        storage=storages['default'] # Fixed: use string path
     )
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     uploaded_at = models.DateTimeField(auto_now_add=True)
