@@ -100,6 +100,8 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # ─── Storage (Static & Media) ──────────────────────────────────────────
+# At the top with other paths
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 # The STORAGES setting (new in Django 4.2) replaces STATICFILES_STORAGE and DEFAULT_FILE_STORAGE.
 STORAGES = {
     # Default storage for media files (Google Cloud Storage)
