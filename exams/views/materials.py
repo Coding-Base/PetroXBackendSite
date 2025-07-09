@@ -6,6 +6,7 @@ from django.utils import timezone
 import logging
 from ..models import Material
 from ..serializers import MaterialSerializer
+from rest_framework.exceptions import ServiceUnavailable
 
 logger = logging.getLogger(__name__)
 
