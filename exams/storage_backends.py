@@ -21,13 +21,10 @@ NTP_PORT = 123
 NTP_DELTA = 2208988800  # 1970-01-01 00:00:00 in NTP seconds
 
 class GoogleCloudMediaStorage(Storage):
-    _client = None
-    _bucket = None
-    _initialized = False
-    
     def __init__(self):
-        # Use lazy initialization - no heavy operations in constructor
-        pass
+        # Simplified initialization - no heavy operations in constructor
+        self._client = None
+        self._bucket = None
     
     def deconstruct(self):
         """
@@ -39,11 +36,20 @@ class GoogleCloudMediaStorage(Storage):
             {}
         )
     
+    def _get_client(self):
+        """Get or create the storage client"""
+        if self._client is None:
+            self._initialize_storage()
+        return self._client
+
+    def _get_bucket(self):
+        """Get or create the bucket instance"""
+        if self._bucket is None:
+            self._initialize_storage()
+        return self._bucket
+
     def _initialize_storage(self):
         """Initialize GCS connection with robust error handling and validation"""
-        if GoogleCloudMediaStorage._initialized:
-            return
-            
         try:
             # 1. Verify environment variables exist
             if "GCS_CREDENTIALS_JSON" not in os.environ:
@@ -85,17 +91,16 @@ class GoogleCloudMediaStorage(Storage):
             credentials = self._create_credentials_with_retry(credentials_info)
             
             # 8. Initialize client and verify bucket
-            GoogleCloudMediaStorage._client = storage.Client(
+            self._client = storage.Client(
                 credentials=credentials,
                 project=credentials_info.get('project_id')
             )
-            GoogleCloudMediaStorage._bucket = GoogleCloudMediaStorage._client.bucket(bucket_name)
+            self._bucket = self._client.bucket(bucket_name)
             
-            if not GoogleCloudMediaStorage._bucket.exists():
+            if not self._bucket.exists():
                 raise ServiceUnavailable(f"Bucket {bucket_name} does not exist or is inaccessible")
             
             logger.info(f"Successfully connected to GCS bucket: {bucket_name}")
-            GoogleCloudMediaStorage._initialized = True
             
         except Exception as e:
             logger.error(f"Storage initialization error: {str(e)}")
@@ -117,12 +122,13 @@ class GoogleCloudMediaStorage(Storage):
                 logger.warning(f"System time is out of sync by {time_diff:.2f} seconds. JWT may fail!")
         except Exception as e:
             logger.error(f"Time synchronization check failed: {str(e)}")
+            # Continue even if time sync fails - just log the error
 
     def _get_ntp_time(self):
         """Get current time from NTP server"""
         try:
             client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            client.settimeout(5)
+            client.settimeout(3)  # Reduced timeout
             data = b'\x1b' + 47 * b'\0'
             client.sendto(data, (NTP_SERVER, NTP_PORT))
             data, _ = client.recvfrom(1024)
@@ -133,9 +139,10 @@ class GoogleCloudMediaStorage(Storage):
                 return datetime.utcfromtimestamp(t).replace(tzinfo=timezone.utc)
         except Exception as e:
             logger.error(f"NTP request failed: {str(e)}")
-            raise ServiceUnavailable("NTP time synchronization failed") from e
+            # Return current time if NTP fails
+            return datetime.now(timezone.utc)
         
-        raise ServiceUnavailable("Could not retrieve NTP time")
+        return datetime.now(timezone.utc)  # Fallback to current time
 
     def _test_jwt_signature(self, credentials_info):
         """Test JWT signature creation with the private key"""
@@ -180,12 +187,6 @@ class GoogleCloudMediaStorage(Storage):
             except Exception as e:
                 logger.error(f"Unexpected authentication error: {str(e)}")
                 raise
-
-    def _get_bucket(self):
-        """Get bucket instance with lazy initialization"""
-        if not GoogleCloudMediaStorage._initialized:
-            self._initialize_storage()
-        return GoogleCloudMediaStorage._bucket
 
     def _save(self, name, content):
         """Save file to GCS with robust error handling"""
@@ -256,4 +257,10 @@ class GoogleCloudMediaStorage(Storage):
         raise NotImplementedError("Cloud storage doesn't support local paths")
 
     def open(self, name, mode='rb'):
-        raise NotImplementedError("Cloud storage doesn't support direct file opening")
+        try:
+            bucket = self._get_bucket()
+            blob = bucket.blob(name)
+            return blob.open(mode)
+        except Exception as e:
+            logger.error(f"GCS open error: {str(e)}")
+            raise
