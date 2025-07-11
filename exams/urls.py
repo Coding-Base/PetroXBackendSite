@@ -1,3 +1,4 @@
+# exams/urls.py
 from django.urls import path
 from .views.auth import RegisterUserAPIView
 from .views.courses import CourseListAPIView
