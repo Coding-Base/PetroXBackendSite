@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  fetchCourses, 
   startTest, 
   fetchLeaderboard,
   fetchUserHistory,
   fetchUserRank,
   fetchUserUploadStats
-} from '../api';
+} from '@/api';
 import Chat from '../pages/chat';
 import { Doughnut } from 'react-chartjs-2';
 import {
@@ -193,7 +192,12 @@ export default function Dashboard() {
     };
   }, [showMobileMenu]);
 
+  // Set username unconditionally on component mount
   useEffect(() => {
+    // Set username from localStorage immediately
+    const storedName = localStorage.getItem('username') || 'User';
+    setUserName(storedName);
+
     // Fetch all dashboard data
     const fetchDashboardData = async () => {
       try {
@@ -234,10 +238,6 @@ export default function Dashboard() {
         });
         setIsLoading(prev => ({ ...prev, uploadStats: false }));
         
-        // Set username
-        const storedName = localStorage.getItem('username') || 'User';
-        setUserName(storedName);
-        
       } catch (err) {
         console.error('Failed to load dashboard data', err);
         setIsLoading({
@@ -263,8 +263,19 @@ export default function Dashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.clear();
+    // Clear all authentication-related data
+    localStorage.removeItem('token'); // Clear the auth token
+    localStorage.removeItem('username'); // Clear username
+    localStorage.removeItem('userId'); // Clear user ID if exists
+    
+    // Clear any other user-related data
+    sessionStorage.clear(); // Clear session storage too
+    
+    // Redirect to login page
     navigate('/login');
+    
+    // Force a full page refresh to reset application state
+    window.location.reload();
   };
 
   // Doughnut chart options

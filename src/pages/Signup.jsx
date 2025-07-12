@@ -1,20 +1,21 @@
+// src/components/SignUp.jsx
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { registerUser } from '../api';
-import image from "../images/finallogo.png"
+import image from "../images/finallogo.png";
 import { Button } from '../components/ui/button';
 
 export default function SignUp() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get('next') || '/dashboard';
+  
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [searchParams] = useSearchParams();
-  const next = searchParams.get('next') || '/login';
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -22,10 +23,12 @@ export default function SignUp() {
     
     try {
       await registerUser(username, email, password);
-      navigate(`/login?next=${next}`);
+      navigate(`/login?next=${encodeURIComponent(next)}`);
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Unexpected error. Please try again.';
-      setError(msg);
+      setError(
+        err.response?.data?.detail || 
+        'Unexpected error. Please try again.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -155,12 +158,12 @@ export default function SignUp() {
 
         <p className="mt-6 text-center text-sm text-gray-600">
           Already have an account?{' '}
-          <button
-            onClick={() => navigate('/login')}
+          <Link
+            to={`/login?next=${encodeURIComponent(next)}`}
             className="font-medium text-blue-600 hover:text-indigo-700 transition-colors duration-200 hover:underline"
           >
             Sign In
-          </button>
+          </Link>
         </p>
       </div>
     </div>

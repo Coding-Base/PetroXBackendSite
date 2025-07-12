@@ -1,4 +1,3 @@
-// src/components/History.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Breadcrumbs from '../components/shared/breadcrumbs';
@@ -7,109 +6,77 @@ import { Button } from '../components/ui/button';
 import CreateTest from '../components/shared/create-test';
 import { useGetTests } from '@/hooks/tests';
 import { DataTableSkeleton } from '@/components/shared/data-table-skeleton';
-import DataTable from '@/components/shared/data-table';
 import dayjs from 'dayjs';
-
-// import { Checkbox } from '@/components/ui/checkbox';
-// import { Admin } from '@/constants/data';
-// import { c } from '@tanstack/react-table';
-// import { CellAction } from './cell-action';
+import DataTable from '../components/shared/data-table';
 
 export const columns = [
   {
     id: 'course',
     header: 'Course',
-    cell: ({ row }) => <p>{row?.original?.course}</p>
+    cell: ({ row }) => <p>{row?.original?.course || 'N/A'}</p>,
   },
   {
     id: 'score',
     header: 'Score',
     cell: ({ row }) => {
-      const scorePercentage =
-        (row?.original?.score * 100) / row?.original?.questions?.length;
+      // FIX: Added null checks to prevent "map is not a function" error
+      const questions = row?.original?.questions || [];
+      const score = row?.original?.score || 0;
+      const pct = questions.length > 0 ? (score * 100) / questions.length : 0;
+      
+      const colorClass =
+        pct >= 80
+          ? 'bg-green-100 text-green-800'
+          : pct >= 60
+          ? 'bg-yellow-100 text-yellow-800'
+          : 'bg-red-100 text-red-800';
+          
       return (
-        <span
-          className={`rounded-full px-2 py-1 text-xs font-semibold ${
-            scorePercentage >= 80
-              ? 'bg-green-100 text-green-800'
-              : scorePercentage >= 60
-                ? 'bg-yellow-100 text-yellow-800'
-                : 'bg-red-100 text-red-800'
-          }`}
-        >
-          {row?.original?.score ? `${scorePercentage}%` : 'n/a'}
+        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colorClass}`}>
+          {questions.length ? `${Math.round(pct)}%` : 'n/a'}
         </span>
       );
-    }
+    },
   },
   {
     id: 'questions',
     header: 'No Of Questions',
-    cell: ({ row }) => <>{row?.original?.questions?.length || 'n/a'}</>
+    cell: ({ row }) => <>{row?.original?.questions?.length || 'n/a'}</>,
   },
-  // {
-  //   accessorKey: 'lga',
-  //   header: 'LGA'
-  // },
-  // {
-  //   accessorKey: 'ward',
-  //   header: 'WARD'
-  // },
-  // {
-  //   accessorKey: 'address',
-  //   header: 'ADDRESS'
-  // },
-  // {
-  //   id: 'actions',
-  //   cell: ({ row }) => <>{new Date(row.start_time).toLocaleString()}</>
-  // }
   {
     id: 'start_time',
     header: 'Scheduled Time',
     cell: ({ row }) => (
-      <p>{dayjs(row?.original?.start_time).format('DD/MM/YYYY')}</p>
-    )
-  }
+      <p>{row?.original?.start_time ? dayjs(row.original.start_time).format('DD/MM/YYYY') : 'N/A'}</p>
+    ),
+  },
 ];
 
-function CreateTestModal({ title, isOpen, description, onClose }) {
-  // This component can be used to create a new test session
+function CreateTestModal({ isOpen, onClose }) {
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      className={'mx-auto w-full max-w-2xl rounded-lg bg-white p-6'}
-    >
-      <div>
-        <CreateTest />
-        <div className="flex w-full items-center justify-end space-x-2 pt-6">
-          {/* <Button disabled={loading} variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button disabled={loading} variant="destructive" onClick={onConfirm}>
-          Continue
-        </Button> */}
-        </div>
-      </div>
+    <Modal isOpen={isOpen} onClose={onClose} className="mx-auto w-full max-w-2xl rounded-lg bg-white p-6">
+      <CreateTest />
     </Modal>
   );
 }
 
 export default function MyTests() {
-  const page = 1;
-  const pageLimit = 10;
-  // const [records, setRecords] = useState([]);
-  // const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
-  const { loading, data } = useGetTests();
+  // Destructure data and isLoading directly from useGetTests
+  const { data: records = [], isLoading } = useGetTests();
 
-  const records = data?.data ?? [];
+  // Fix: support both array and object with data property
+  const recordsArray = Array.isArray(records)
+    ? records
+    : Array.isArray(records?.data)
+      ? records.data
+      : [];
 
-  const total = records.length;
-
-  const pageCount = Math.ceil((total ?? 0) / pageLimit);
+  const total = recordsArray.length;
+  const pageLimit = 10;
+  const pageCount = Math.ceil(total / pageLimit);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -117,38 +84,35 @@ export default function MyTests() {
         <Breadcrumbs
           items={[
             { title: 'Dashboard', link: '/dashboard' },
-            { title: 'My Test', link: '/history' }
+            { title: 'My Tests', link: '/history' },
           ]}
           className="mb-4"
         />
+
         <div className="mb-4 flex justify-end">
-          <Button onClick={() => setIsOpen(true)} className="mb-4 text-black">
+          <Button onClick={() => setIsOpen(true)} className="text-black">
             Create New Test
           </Button>
         </div>
-        {loading ? (
+
+        {isLoading ? (
           <DataTableSkeleton
-            columnCount={10}
-            filterableColumnCount={2}
+            columnCount={columns.length}
+            filterableColumnCount={1}
             searchableColumnCount={1}
           />
-        ) : records.length === 0 ? (
+        ) : recordsArray.length === 0 ? (
           <p className="mt-4 text-2xl text-gray-600">
             You haven't taken any tests yet.
           </p>
         ) : (
           <div className="space-y-4">
-            <DataTable columns={columns} data={records} pageCount={pageCount} />
+            <DataTable columns={columns} data={recordsArray} pageCount={pageCount} />
           </div>
         )}
       </div>
-      <CreateTestModal
-        loading={loading}
-        title="Create Test"
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
-        description="Create test by filling the form fields"
-      />
+
+      <CreateTestModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
     </div>
   );
 }

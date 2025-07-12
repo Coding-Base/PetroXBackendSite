@@ -1,36 +1,37 @@
+// src/components/SignIn.jsx
 import React, { useState } from 'react';
-import { useNavigate, Link, useParams } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { loginUser } from '../api/index';
 import image from '../images/finallogo.png';
-import { useSearchParams } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 
 export default function SignIn() {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('james');
-  const [password, setPassword] = useState('jame');
+  const [searchParams] = useSearchParams();
+  const nextUrl = searchParams.get('next') || '/dashboard';
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [searchParams] = useSearchParams();
-  const next = searchParams.get('next') || '/dashboard';
-  const location = useLocation();
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    
+
     try {
-      const { data } = await loginUser(username, password);
+      const { data } = await loginUser(username.trim(), password);
       localStorage.setItem('access_token', data.access);
       localStorage.setItem('refresh_token', data.refresh);
-      localStorage.setItem('username', username);
-      navigate(next);
+      const actualUsername = data.user?.username || username.trim();
+      localStorage.setItem('username', actualUsername);
+      navigate(nextUrl, { replace: true });
     } catch (err) {
-      console.error(err.response || err);
-      const msg = err.response?.data?.detail || 'Invalid credentials. Please try again.';
-      setError(msg);
+      setError(
+        err.response?.data?.detail ||
+        'Invalid credentials. Please try again.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -66,10 +67,7 @@ export default function SignIn() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <label
-              htmlFor="username"
-              className="block text-sm font-medium text-gray-700"
-            >
+            <label htmlFor="username" className="block text-sm font-medium text-gray-700">
               Username
             </label>
             <div className="relative">
@@ -81,20 +79,18 @@ export default function SignIn() {
               <input
                 id="username"
                 type="text"
-                required
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Your username"
-                className="pl-10 mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:ring-opacity-50 transition duration-200"
+                required
+                className="pl-10 mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition duration-200"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-gray-700"
-            >
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
               Password
             </label>
             <div className="relative">
@@ -106,20 +102,22 @@ export default function SignIn() {
               <input
                 id="password"
                 type="password"
-                required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="pl-10 mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:ring-opacity-50 transition duration-200"
+                required
+                className="pl-10 mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition duration-200"
               />
             </div>
           </div>
 
           <Button
-            variant="outline"
             type="submit"
             disabled={isLoading}
-            className={`w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-3 font-semibold text-white shadow-md hover:from-blue-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 transform hover:-translate-y-0.5 ${isLoading ? 'opacity-90 cursor-not-allowed' : ''}`}
+            className={`w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-3 font-semibold text-white shadow-md 
+              hover:from-blue-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 
+              transition-all duration-300 transform ${isLoading ? 'opacity-90 cursor-not-allowed' : 'hover:-translate-y-0.5'}`}
           >
             {isLoading ? (
               <div className="flex items-center justify-center">
@@ -136,7 +134,7 @@ export default function SignIn() {
         <p className="mt-6 text-center text-sm text-gray-600">
           Don&apos;t have an account?{' '}
           <Link
-            to={`/signup${location.search}`}
+            to={`/signup?next=${encodeURIComponent(nextUrl)}`}
             className="font-medium text-blue-600 hover:text-indigo-700 transition-colors duration-200 hover:underline"
           >
             Sign Up

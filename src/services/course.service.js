@@ -1,6 +1,14 @@
+// src/services/course.service.js
 import { api } from '@/api';
 
-export const addCourse = async (course, signal) =>
-  api.post('/courses/', course, { signal });
+// Create a new course
+export const addCourse = (course, signal) =>
+  api
+    .post('/api/courses/', course, { signal })
+    .then(response => response.data);
 
-export const getCourses = async (signal) => api.get('/courses/', { signal });
+// Fetch all courses
+export const getCourses = signal =>
+  api
+    .get('/api/courses/', { signal })
+    .then(response => response.data);

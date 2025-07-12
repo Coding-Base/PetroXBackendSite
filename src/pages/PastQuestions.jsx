@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import {Button} from '../components/ui/button';
-import { useGetCourses } from '@/hooks/courses';
+import { Button } from '../components/ui/button';
+import { fetchCourses } from '@/api/index';
 
 const UploadPassQuestions = () => {
   const [step, setStep] = useState(1);
@@ -13,13 +13,34 @@ const UploadPassQuestions = () => {
   const [message, setMessage] = useState({ text: '', type: '' });
   const [uploadStatus, setUploadStatus] = useState(null);
   const [parsedQuestions, setParsedQuestions] = useState([]);
-
-  const { data } = useGetCourses();
-  const courses = data?.data || [];
+  const [courses, setCourses] = useState([]);
+  const [isLoadingCourses, setIsLoadingCourses] = useState(true);
+  const [courseError, setCourseError] = useState('');
 
   // Generate years from current year back 30 years
   const currentYear = new Date().getFullYear();
   const years = Array.from({length: 30}, (_, i) => currentYear - i);
+
+  // Fetch courses on component mount
+  useEffect(() => {
+    const loadCourses = async () => {
+      try {
+        setIsLoadingCourses(true);
+        const response = await fetchCourses();
+        // If your API returns { data: [...] }
+        const courseArr = Array.isArray(response.data) ? response.data : response;
+        setCourses(courseArr);
+      } catch (err) {
+        console.error('Failed to fetch courses:', err);
+        setCourseError('Failed to load courses. Please try again later.');
+        setCourses([]);
+      } finally {
+        setIsLoadingCourses(false);
+      }
+    };
+
+    loadCourses();
+  }, []);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -31,9 +52,9 @@ const UploadPassQuestions = () => {
       ];
       if (!validTypes.includes(selectedFile.type)) {
         setMessage({
-  text: 'Invalid file type. Please upload PDF, DOCX, or TXT.',
-  type: 'error'
-});
+          text: 'Invalid file type. Please upload PDF, DOCX, or TXT.',
+          type: 'error'
+        });
         return;
       }
       setFile(selectedFile);
@@ -77,7 +98,7 @@ const UploadPassQuestions = () => {
       setMessage({ text: '', type: '' });
       try {
         const response = await axios.post(
-          'http://127.0.0.1:8000/api/preview-pass-questions/', 
+          'https://petroxtestbackend.onrender.com/api/preview-pass-questions/', 
           formData, 
           {
             headers: {
@@ -107,12 +128,51 @@ const UploadPassQuestions = () => {
       setMessage({ text: '', type: '' });
       
       try {
+        // Validate all questions are filled
+        const hasEmptyQuestions = parsedQuestions.some(q => {
+          if (!q.text) return true;
+          if (questionType === 'multichoice') {
+            return !q.A || !q.B || !q.C || !q.D || !q.answer;
+          }
+          return false;
+        });
+        
+        if (hasEmptyQuestions) {
+          setMessage({ 
+            text: 'Please fill all question fields and ensure answers are selected', 
+            type: 'error' 
+          });
+          setIsLoading(false);
+          return;
+        }
+        
+        // Format questions for backend
+        const formattedQuestions = parsedQuestions.map(q => {
+          const baseQuestion = {
+            text: q.text,
+            question_type: questionType
+          };
+          
+          if (questionType === 'multichoice') {
+            return {
+              ...baseQuestion,
+              optionA: q.A,
+              optionB: q.B,
+              optionC: q.C,
+              optionD: q.D,
+              correct_answer: q.answer
+            };
+          }
+          return baseQuestion;
+        });
+
         const response = await axios.post(
-          'http://127.0.0.1:8000/api/upload-pass-questions/', 
+          'https://petroxtestbackend.onrender.com/api/upload-pass-questions/', 
           {
             course_id: selectedCourse,
             year: year,
-            questions: parsedQuestions
+            questions: formattedQuestions,
+            question_type: questionType
           },
           {
             headers: {
@@ -138,8 +198,17 @@ const UploadPassQuestions = () => {
         setYear('');
         setStep(1);
         setParsedQuestions([]);
-        document.querySelector('input[type="file"]').value = '';
+        const fileInput = document.querySelector('input[type="file"]');
+        if (fileInput) fileInput.value = '';
       } catch (error) {
+        console.error('Submission error:', {
+          status: error.response?.status,
+          data: error.response?.data,
+          course_id: selectedCourse,
+          year: year,
+          question_count: parsedQuestions.length
+        });
+        
         if (error.response?.status === 409) {
           setMessage({ 
             text: error.response.data.error || 'Past questions for this year already exist', 
@@ -147,10 +216,8 @@ const UploadPassQuestions = () => {
           });
         } else {
           const errorMsg = error.response?.data?.error || 
-          
                           error.response?.data?.message || 
                           'Submission failed. Please try again.';
-                          //  console.log(error.response.data)
           setMessage({ text: errorMsg, type: 'error' });
         }
       } finally {
@@ -161,79 +228,78 @@ const UploadPassQuestions = () => {
 
   const renderQuestionEditor = () => (
     <div className="mt-6">
-      <h2 className="text-xl font-semibold mb-4">Review and Edit Questions</h2>
-      <p className="text-sm text-gray-600 mb-4">
+      <h2 className="text-lg sm:text-xl font-semibold mb-4">Review and Edit Questions</h2>
+      <p className="text-xs sm:text-sm text-gray-600 mb-4">
         Please review the parsed questions and make any necessary corrections before submitting.
       </p>
-      
-      <div className="max-h-[500px] overflow-y-auto border border-gray-200 rounded-lg">
-        <table className="min-w-full bg-white">
+      <div className="max-h-[400px] overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="min-w-[600px] w-full bg-white text-xs sm:text-sm">
           <thead className="sticky top-0 bg-gray-50 z-10">
             <tr>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Question</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Option A</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Option B</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Option C</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Option D</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Correct Answer</th>
+              <th className="py-2 px-2 sm:py-3 sm:px-4 text-left font-medium text-gray-500 uppercase tracking-wider">Question</th>
+              <th className="py-2 px-2 sm:py-3 sm:px-4 text-left font-medium text-gray-500 uppercase tracking-wider">Option A</th>
+              <th className="py-2 px-2 sm:py-3 sm:px-4 text-left font-medium text-gray-500 uppercase tracking-wider">Option B</th>
+              <th className="py-2 px-2 sm:py-3 sm:px-4 text-left font-medium text-gray-500 uppercase tracking-wider">Option C</th>
+              <th className="py-2 px-2 sm:py-3 sm:px-4 text-left font-medium text-gray-500 uppercase tracking-wider">Option D</th>
+              <th className="py-2 px-2 sm:py-3 sm:px-4 text-left font-medium text-gray-500 uppercase tracking-wider">Correct Answer</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {parsedQuestions.map((q, index) => (
               <tr key={q.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                <td className="py-3 px-4">
+                <td className="py-2 px-2 sm:py-3 sm:px-4">
                   <textarea
                     value={q.text}
                     onChange={(e) => handleQuestionChange(index, 'text', e.target.value)}
-                    className="w-full p-2 border rounded text-sm h-24"
+                    className="w-full p-2 border rounded text-xs sm:text-sm h-20 sm:h-24"
                     placeholder="Question text"
                   />
                 </td>
-                <td className="py-3 px-4">
+                <td className="py-2 px-2 sm:py-3 sm:px-4">
                   <input
                     type="text"
                     value={q.A}
                     onChange={(e) => handleQuestionChange(index, 'A', e.target.value)}
-                    className="w-full p-2 border rounded text-sm"
+                    className="w-full p-2 border rounded text-xs sm:text-sm"
                     placeholder="Option A"
                     disabled={questionType === 'theory'}
                   />
                 </td>
-                <td className="py-3 px-4">
+                <td className="py-2 px-2 sm:py-3 sm:px-4">
                   <input
                     type="text"
                     value={q.B}
                     onChange={(e) => handleQuestionChange(index, 'B', e.target.value)}
-                    className="w-full p-2 border rounded text-sm"
+                    className="w-full p-2 border rounded text-xs sm:text-sm"
                     placeholder="Option B"
                     disabled={questionType === 'theory'}
                   />
                 </td>
-                <td className="py-3 px-4">
+                <td className="py-2 px-2 sm:py-3 sm:px-4">
                   <input
                     type="text"
                     value={q.C}
                     onChange={(e) => handleQuestionChange(index, 'C', e.target.value)}
-                    className="w-full p-2 border rounded text-sm"
+                    className="w-full p-2 border rounded text-xs sm:text-sm"
                     placeholder="Option C"
                     disabled={questionType === 'theory'}
                   />
                 </td>
-                <td className="py-3 px-4">
+                <td className="py-2 px-2 sm:py-3 sm:px-4">
                   <input
                     type="text"
                     value={q.D}
                     onChange={(e) => handleQuestionChange(index, 'D', e.target.value)}
-                    className="w-full p-2 border rounded text-sm"
+                    className="w-full p-2 border rounded text-xs sm:text-sm"
                     placeholder="Option D"
                     disabled={questionType === 'theory'}
                   />
                 </td>
-                <td className="py-3 px-4">
+                <td className="py-2 px-2 sm:py-3 sm:px-4">
                   <select
                     value={q.answer}
                     onChange={(e) => handleQuestionChange(index, 'answer', e.target.value)}
-                    className="w-full p-2 border rounded text-sm"
+                    className="w-full p-2 border rounded text-xs sm:text-sm"
                     disabled={questionType === 'theory'}
                   >
                     <option value="">Select</option>
@@ -248,19 +314,20 @@ const UploadPassQuestions = () => {
           </tbody>
         </table>
       </div>
-      
-      <div className="mt-4 flex justify-between">
+      {/* Button group: sticky on mobile */}
+      <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:gap-4 justify-between
+        fixed bottom-0 left-0 right-0 bg-white p-2 border-t border-gray-200 z-20 sm:static sm:bg-transparent sm:border-0 sm:p-0">
         <Button
           type="button"
           onClick={() => setStep(1)}
-          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition"
+          className="w-full sm:w-auto px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition"
         >
           Back to Upload
         </Button>
         <Button
           type="submit"
           disabled={isLoading}
-          className={`px-6 py-2 rounded-lg font-medium text-white transition ${
+          className={`w-full sm:w-auto px-6 py-2 rounded-lg font-medium text-white transition ${
             isLoading 
               ? 'bg-blue-400 cursor-not-allowed' 
               : 'bg-blue-600 hover:bg-blue-700'
@@ -269,23 +336,54 @@ const UploadPassQuestions = () => {
           {isLoading ? 'Submitting...' : 'Submit Questions'}
         </Button>
       </div>
+      {/* Add padding to bottom so content is not hidden behind sticky buttons */}
+      <div className="h-20 sm:hidden" />
     </div>
   );
 
+  if (isLoadingCourses) {
+    return (
+      <div className="container bg-gray-50 mx-auto p-4 flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+          <p className="mt-4 text-indigo-700">Loading courses...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (courseError) {
+    return (
+      <div className="container bg-gray-50 mx-auto p-2 sm:p-4">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <div className="rounded-lg bg-red-100 p-4 text-red-700">
+            <p className="font-medium">{courseError}</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-3 rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container bg-gray-50 mx-auto p-4">      
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800">
+    <div className="container bg-gray-50 mx-auto p-2 sm:p-4">      
+      <div className="bg-white rounded-lg shadow-md p-2 sm:p-6">
+        <h1 className="text-lg sm:text-2xl font-bold mb-4 sm:mb-6 text-gray-800">
           {step === 1 ? 'Upload Past Questions' : 'Review Questions'}
         </h1>
         
         {step === 1 && (
           <>
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold mb-3 text-gray-700">Question Type</h2>
-              <div className="flex space-x-4">
+            <div className="mb-4 sm:mb-6">
+              <h2 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3 text-gray-700">Question Type</h2>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
                 <Button 
-                  className={`px-6 py-3 rounded-lg transition ${
+                  className={`w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition ${
                     questionType === 'multichoice' 
                       ? 'bg-blue-600 text-white' 
                       : 'bg-gray-200 hover:bg-gray-300'
@@ -295,7 +393,7 @@ const UploadPassQuestions = () => {
                   Multiple Choice
                 </Button>
                 <Button 
-                  className={`px-6 py-3 rounded-lg transition ${
+                  className={`w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition ${
                     questionType === 'theory' 
                       ? 'bg-blue-600 text-white' 
                       : 'bg-gray-200 hover:bg-gray-300'
@@ -305,19 +403,19 @@ const UploadPassQuestions = () => {
                   Theory Questions
                 </Button>
               </div>
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-xs sm:text-sm text-gray-500">
                 Select the type of questions in your file
               </p>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   Year
                 </label>
                 <select
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs sm:text-sm"
                   required
                 >
                   <option value="">-- Select year --</option>
@@ -328,13 +426,13 @@ const UploadPassQuestions = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   Select Course
                 </label>
                 <select
                   value={selectedCourse}
                   onChange={(e) => setSelectedCourse(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs sm:text-sm"
                   required
                 >
                   <option value="">-- Select a course --</option>
@@ -347,12 +445,12 @@ const UploadPassQuestions = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   Upload File
                 </label>
-                <div className="flex items-center space-x-4">
-                  <label className="flex-1">
-                    <div className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition ${
+                <div className="flex flex-col sm:flex-row items-center gap-2 sm:space-x-4">
+                  <label className="flex-1 w-full">
+                    <div className={`border-2 border-dashed rounded-lg p-3 sm:p-4 text-center cursor-pointer hover:border-blue-400 transition ${
                       file ? 'border-green-500 bg-green-50' : 'border-gray-300'
                     }`}>
                       <input
@@ -362,14 +460,14 @@ const UploadPassQuestions = () => {
                         className="hidden"
                         required
                       />
-                      <p className="text-gray-600">
+                      <p className="text-gray-600 text-xs sm:text-sm">
                         {file ? (
                           <span className="font-medium text-green-700">{file.name}</span>
                         ) : (
                           'Click to browse or drag and drop'
                         )}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-[10px] sm:text-xs text-gray-500 mt-1">
                         Supported formats: PDF, DOCX, TXT
                       </p>
                     </div>
@@ -381,7 +479,7 @@ const UploadPassQuestions = () => {
                         setFile(null);
                         document.querySelector('input[type="file"]').value = '';
                       }}
-                      className="p-2 text-red-500 hover:text-red-700"
+                      className="p-2 text-xs sm:text-base text-red-500 hover:text-red-700"
                     >
                       ✕ Clear
                     </Button>
@@ -393,7 +491,7 @@ const UploadPassQuestions = () => {
                 <Button
                   type="submit"
                   disabled={isLoading || !file || !selectedCourse || !year}
-                  className={`w-full py-3 px-4 rounded-lg font-medium text-white transition ${
+                  className={`w-full py-2 sm:py-3 px-4 rounded-lg font-medium text-white transition text-xs sm:text-base ${
                     isLoading 
                       ? 'bg-blue-400 cursor-not-allowed' 
                       : 'bg-blue-600 hover:bg-blue-700'
@@ -418,23 +516,22 @@ const UploadPassQuestions = () => {
 
         {step === 2 && (
           <form onSubmit={handleSubmit}>
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="font-medium text-blue-800">Upload Details</h3>
-              <div className="mt-2 text-sm">
+            <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-50 rounded-lg">
+              <h3 className="font-medium text-blue-800 text-sm sm:text-base">Upload Details</h3>
+              <div className="mt-2 text-xs sm:text-sm">
                 <p><span className="font-medium">Year:</span> {year}</p>
                 <p><span className="font-medium">Course:</span> {courses.find(c => c.id == selectedCourse)?.name || 'Unknown Course'}</p>
                 <p><span className="font-medium">File:</span> {file?.name || 'No file selected'}</p>
                 <p><span className="font-medium">Questions:</span> {parsedQuestions.length}</p>
               </div>
             </div>
-            
             {renderQuestionEditor()}
           </form>
         )}
         
         {message.text && (
           <div
-            className={`mt-6 rounded-lg p-4 ${
+            className={`mt-4 sm:mt-6 rounded-lg p-3 sm:p-4 text-xs sm:text-base ${
               message.type === 'error'
                 ? 'bg-red-100 text-red-700'
                 : message.type === 'success'
@@ -447,9 +544,9 @@ const UploadPassQuestions = () => {
         )}
 
         {uploadStatus && step === 1 && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h3 className="font-medium text-gray-800 mb-2">Upload Details</h3>
-            <ul className="space-y-1 text-sm text-gray-600">
+          <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h3 className="font-medium text-gray-800 mb-2 text-xs sm:text-base">Upload Details</h3>
+            <ul className="space-y-1 text-xs sm:text-sm text-gray-600">
               <li>
                 <span className="font-medium">Year:</span> {uploadStatus.year}
               </li>
@@ -466,7 +563,7 @@ const UploadPassQuestions = () => {
                 <span className="font-medium">Status:</span> <span className="text-yellow-600">Pending Admin Approval</span>
               </li>
             </ul>
-            <p className="mt-3 text-sm text-gray-500">
+            <p className="mt-2 sm:mt-3 text-xs sm:text-sm text-gray-500">
               You can track the approval status in your dashboard.
             </p>
           </div>
@@ -474,13 +571,13 @@ const UploadPassQuestions = () => {
       </div>
 
       {step === 1 && (
-        <div className="mt-8 bg-blue-50 p-4 rounded-lg">
-          <h3 className="font-medium text-blue-800 mb-2">How to format your file</h3>
-          <p className="text-sm text-blue-700 mb-2">
+        <div className="mt-6 sm:mt-8 bg-blue-50 p-3 sm:p-4 rounded-lg">
+          <h3 className="font-medium text-blue-800 mb-2 text-xs sm:text-base">How to format your file</h3>
+          <p className="text-xs sm:text-sm text-blue-700 mb-2">
             For best results, structure your questions like this:
           </p>
-          <pre className="bg-white p-3 rounded text-sm overflow-x-auto">
-            {`1. What is 2+2?
+          <pre className="bg-white p-2 sm:p-3 rounded text-xs sm:text-sm overflow-x-auto">
+{`1. What is 2+2?
 a) 3
 b) 4
 c) 5
@@ -501,10 +598,10 @@ Answer: c
 (d) Law of gravitation
 Ans: a`}
           </pre>
-          <p className="mt-2 text-sm text-blue-700">
+          <p className="mt-2 text-xs sm:text-sm text-blue-700">
             The parser supports various formats including:
           </p>
-          <ul className="text-sm text-blue-700 list-disc pl-5 mt-1">
+          <ul className="text-xs sm:text-sm text-blue-700 list-disc pl-5 mt-1">
             <li>Different numbering styles: 1), 1., (1)</li>
             <li>Option formats: a), a., (a)</li>
             <li>Answer indicators: Answer, Ans, Correct, Corr</li>

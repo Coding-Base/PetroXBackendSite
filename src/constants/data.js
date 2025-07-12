@@ -6,6 +6,12 @@ export const navItems = [
     label: 'Dashboard'
   },
   {
+    title: "Campus Navigator",
+    icon: "Compass",
+    href: "/campus-navigator",
+    disabled: false,
+  },
+  {
     title: 'Past Questions',
     href: '/dashboard/past-questions',
     icon: 'user',

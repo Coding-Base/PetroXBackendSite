@@ -34,7 +34,8 @@ import {
   Bot,
   GraduationCap,
   LogOut,
-  Wrench
+  Wrench,
+  Compass,
 } from 'lucide-react';
 
 export const Icons = {
@@ -90,4 +91,5 @@ export const Icons = {
   // test: GraduationCap,
   logout: LogOut,
   tool: Wrench,
+  Compass: Compass,
 };
