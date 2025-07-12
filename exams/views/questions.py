@@ -71,39 +71,7 @@ class PreviewPassQuestionsView(APIView):
             raise ParseError("No file provided.")
         
         text = self.extract_text(file)
-        
-        # Try parsing as multiple-choice first
-        questions = self.parse_multichoice_questions(text)
-        
-        # If no multiple-choice questions found, parse as theory questions
-        if not questions or all(not q['A'] for q in questions):
-            raw_qs = self.split_questions(text)
-            questions = []
-            for q in raw_qs:
-                parts = self.split_parts(q['body'])
-                if parts:
-                    # Theory question with parts
-                    question_text = " ".join([f"{lbl}) {txt}" for lbl, txt in parts])
-                else:
-                    # Single theory question
-                    question_text = q['body']
-                questions.append({
-                    'text': question_text,
-                    'A': '',
-                    'B': '',
-                    'C': '',
-                    'D': '',
-                    'answer': ''
-                })
-        else:
-            # Ensure multiple-choice questions have all fields
-            for q in questions:
-                q['text'] = q.get('text', '')
-                q['A'] = q.get('A', '')
-                q['B'] = q.get('B', '')
-                q['C'] = q.get('C', '')
-                q['D'] = q.get('D', '')
-                q['answer'] = q.get('answer', '').upper()
+        questions = self.parse_questions(text)
         
         return Response({
             'questions': questions,
@@ -138,53 +106,62 @@ class PreviewPassQuestionsView(APIView):
         else:
             raise ParseError("Unsupported file format. Use PDF, DOCX, or TXT")
 
-    def parse_multichoice_questions(self, text):
-        pattern = r"""
-            ^\s*(\d+)[\.\)]\s*                # Question number
-            (.*?)\s*                          # Question text
-            (?:\n\s*a[\)\.]?\s*(.*?)\s*)?     # Option a (optional)
-            (?:\n\s*b[\)\.]?\s*(.*?)\s*)?     # Option b (optional)
-            (?:\n\s*c[\)\.]?\s*(.*?)\s*)?     # Option c (optional)
-            (?:\n\s*d[\)\.]?\s*(.*?)\s*)?     # Option d (optional)
-            (?:\n\s*Answer:\s*([a-dA-D])?\s*)? # Optional answer
-            (?=\n\s*\d+[\.\)]|\Z)             # Lookahead for next question or end
-        """
+    def parse_questions(self, text):
+        # Normalize text for consistent parsing
+        text = re.sub(r'\r\n', '\n', text)  # Standardize line endings
+        text = re.sub(r' +', ' ', text)      # Collapse multiple spaces
         
-        matches = re.findall(pattern, text, re.MULTILINE | re.DOTALL | re.VERBOSE)
+        # Improved pattern to handle different formats
+        pattern = r'(\d+[.)]\s*(.*?))(?:\s*([aA][.)]\s*(.*?))?\s*([bB][.)]\s*(.*?))?\s*([cC][.)]\s*(.*?))?\s*([dD][.)]\s*(.*?))?(\s*Answer:\s*([A-Da-d]))?'
+        
+        matches = re.findall(pattern, text, re.DOTALL)
         
         questions = []
-        for m in matches:
+        for match in matches:
+            # Extract components from match groups
+            question_text = match[1].strip()
+            option_a = match[3] if match[3] else ''
+            option_b = match[5] if match[5] else ''
+            option_c = match[7] if match[7] else ''
+            option_d = match[9] if match[9] else ''
+            answer = match[10].upper() if match[10] else ''
+            
+            # Clean and format options
+            options = {
+                'A': re.sub(r'^\s*[aA][.)]\s*', '', option_a).strip(),
+                'B': re.sub(r'^\s*[bB][.)]\s*', '', option_b).strip(),
+                'C': re.sub(r'^\s*[cC][.)]\s*', '', option_c).strip(),
+                'D': re.sub(r'^\s*[dD][.)]\s*', '', option_d).strip(),
+            }
+            
             questions.append({
-                "number": m[0],
-                "text": m[1].strip(),
-                "A": m[2].strip(),
-                "B": m[3].strip(),
-                "C": m[4].strip(),
-                "D": m[5].strip(),
-                "answer": m[6].upper() if m[6] else ""
+                "text": question_text,
+                "A": options['A'],
+                "B": options['B'],
+                "C": options['C'],
+                "D": options['D'],
+                "answer": answer
             })
         
-        return questions if questions else [{'text': text, 'A': '', 'B': '', 'C': '', 'D': '', 'answer': ''}]
-
-    def split_questions(self, text):
-        # Split text into individual questions based on question numbers
-        # Assuming questions start with a number followed by a dot or in parentheses
-        pattern = r'(?:^|\n)(\(\d+\)|\d+[\.\)])\s*(.*?)(?=\n\(\d+\)|\n\d+[\.\)]|\Z)'
-        matches = re.findall(pattern, text, re.DOTALL)
-        return [{'number': match[0], 'body': match[1].strip()} for match in matches]
-
-    def split_parts(self, body):
-        # Split question body into parts (e.g., a), b), etc.)
-        pattern = r'([a-zA-Z]\))\s*(.*?)(?=[a-zA-Z]\)|$)'
-        matches = re.findall(pattern, body, re.DOTALL)
-        return [(match[0], match[1].strip()) for match in matches]
+        # If no questions found, fallback to theory mode
+        if not questions:
+            return [{
+                'text': text,
+                'A': '',
+                'B': '',
+                'C': '',
+                'D': '',
+                'answer': ''
+            }]
+        
+        return questions
 
 class UploadPassQuestionsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request):
         course_id = request.data.get('course_id')
-        year = request.data.get('year')  # Get year from request
+        year = request.data.get('year')
         questions_data = request.data.get('questions', [])
         
         if not course_id or not questions_data or not year:
@@ -206,14 +183,20 @@ class UploadPassQuestionsView(APIView):
         
         for q in questions_data:
             if q.get('text'):
+                # Ensure options are properly formatted
+                option_a = q.get('A', '').strip()
+                option_b = q.get('B', '').strip()
+                option_c = q.get('C', '').strip()
+                option_d = q.get('D', '').strip()
+                
                 Question.objects.create(
                     course=course,
-                    year=year,  # Add year to question
+                    year=year,
                     question_text=q['text'],
-                    option_a=q.get('A', ''),
-                    option_b=q.get('B', ''),
-                    option_c=q.get('C', ''),
-                    option_d=q.get('D', ''),
+                    option_a=option_a,
+                    option_b=option_b,
+                    option_c=option_c,
+                    option_d=option_d,
                     correct_option=q.get('answer', '').upper(),
                     status='pending',
                     uploaded_by=request.user
@@ -234,12 +217,12 @@ class UploadPassQuestionsView(APIView):
         ).values_list('email', flat=True)
         
         if admin_emails and count > 0:
-            subjectNOTE = f"New {year} Questions Pending Approval for {course.name}"
+            subject = f"New {year} Questions Pending Approval for {course.name}"
             message = f"User {user.username} uploaded {count} questions for {course.name} ({year}). Please review them in the admin panel."
             
             try:
                 send_mail(
-                    subjectNOTE,
+                    subject,
                     message,
                     settings.EMAIL_HOST_USER,
                     admin_emails,
