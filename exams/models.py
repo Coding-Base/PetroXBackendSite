@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
 from exams.storage_backends import GoogleCloudMediaStorage
+
 class Course(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -14,7 +15,7 @@ class Question(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='questions')
     question_text = models.TextField()
     option_a = models.CharField(max_length=255)
-    year =  models.CharField(max_length=255, default='2019')
+    year = models.CharField(max_length=255, blank=True, null=True)  # Made optional
     option_b = models.CharField(max_length=255)
     option_c = models.CharField(max_length=255)
     option_d = models.CharField(max_length=255)
