@@ -149,11 +149,11 @@ class PreviewPassQuestionsView(APIView):
                 logger.error(f"Error parsing question {question_number}: {str(e)}")
                 questions.append({
                     "text": f"Error parsing question: {question_content[:200]}...",
-                    "A": "",
-                    "B": "",
-                    "C": "",
-                    "D": "",
-                    "answer": ""
+                    "optionA": "",
+                    "optionB": "",
+                    "optionC": "",
+                    "optionD": "",
+                    "correct_answer": ""
                 })
         
         return questions
@@ -189,11 +189,11 @@ class PreviewPassQuestionsView(APIView):
         
         return {
             "text": question_text,
-            "A": options['A'],
-            "B": options['B'],
-            "C": options['C'],
-            "D": options['D'],
-            "answer": answer
+            "optionA": options['A'],
+            "optionB": options['B'],
+            "optionC": options['C'],
+            "optionD": options['D'],
+            "correct_answer": answer
         }
 
 class UploadPassQuestionsView(APIView):
@@ -203,17 +203,18 @@ class UploadPassQuestionsView(APIView):
         course_id = request.data.get('course_id')
         year = request.data.get('year')
         questions_data = request.data.get('questions', [])
+        question_type = request.data.get('question_type', 'multichoice')
         
-        if not course_id or not questions_data or not year:
+        if not course_id or not questions_data:
             return Response(
-                {"error": "Missing required fields (course_id, year, or questions)"},
+                {"error": "Missing required fields (course_id or questions)"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         course = get_object_or_404(Course, id=course_id)
         
         # Check if questions already exist for this course/year
-        if Question.objects.filter(course=course, year=year).exists():
+        if year and Question.objects.filter(course=course, year=year).exists():
             return Response(
                 {"error": f"Past questions for {course.name} ({year}) already exist"},
                 status=status.HTTP_409_CONFLICT
@@ -225,18 +226,33 @@ class UploadPassQuestionsView(APIView):
         for i, q in enumerate(questions_data):
             if q.get('text'):
                 try:
-                    Question.objects.create(
-                        course=course,
-                        year=year,
-                        question_text=q['text'],
-                        option_a=q.get('A', '').strip(),
-                        option_b=q.get('B', '').strip(),
-                        option_c=q.get('C', '').strip(),
-                        option_d=q.get('D', '').strip(),
-                        correct_option=q.get('answer', '').upper(),
-                        status='pending',
-                        uploaded_by=request.user
-                    )
+                    # For theory questions, skip options and answer
+                    if question_type == 'theory':
+                        Question.objects.create(
+                            course=course,
+                            year=year,
+                            question_text=q['text'],
+                            option_a='',
+                            option_b='',
+                            option_c='',
+                            option_d='',
+                            correct_option='',
+                            status='pending',
+                            uploaded_by=request.user
+                        )
+                    else:
+                        Question.objects.create(
+                            course=course,
+                            year=year,
+                            question_text=q['text'],
+                            option_a=q.get('optionA', '').strip(),
+                            option_b=q.get('optionB', '').strip(),
+                            option_c=q.get('optionC', '').strip(),
+                            option_d=q.get('optionD', '').strip(),
+                            correct_option=q.get('correct_answer', '').upper(),
+                            status='pending',
+                            uploaded_by=request.user
+                        )
                     created_count += 1
                 except Exception as e:
                     errors.append(f"Question {i+1}: {str(e)}")
@@ -245,7 +261,7 @@ class UploadPassQuestionsView(APIView):
             self.notify_admins(request.user, course, created_count, year)
             
         response = {
-            "message": f"{created_count} questions for {year} uploaded for review",
+            "message": f"{created_count} questions uploaded for review",
             "course": course.name,
             "year": year
         }
