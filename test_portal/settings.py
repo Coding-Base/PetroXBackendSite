@@ -34,7 +34,8 @@ LOGGING = {
 
 # ─── Load .env ───────────────────────────────────────────────────────────────
 load_dotenv()
-
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 # ─── Paths ──────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
 

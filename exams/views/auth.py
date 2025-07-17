@@ -42,10 +42,13 @@ class RegisterUserAPIView(APIView):
 
         serializer = UserSerializer(user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
+from rest_framework.renderers import JSONRenderer
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+@method_decorator(csrf_exempt, name='dispatch')
 class GoogleAuthView(APIView):
     permission_classes = []  # Allow unauthenticated access
-    
+    renderer_classes = [JSONRenderer]
     def post(self, request):
         # Get authorization code from request
         code = request.data.get('code')
