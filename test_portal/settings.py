@@ -46,7 +46,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = ['*']
 
 # CSRF TRUSTED ORIGINS for production login
-CSRF_TRUSTED_ORIGINS = ['https://petroxtestbackend.onrender.com']
+CSRF_TRUSTED_ORIGINS = ['https://petroxtestbackend.onrender.com','http://localhost:5173']
 
 # ─── Applications ────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
@@ -107,6 +107,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
+     'EXCEPTION_HANDLER': 'exams.exceptions.custom_exception_handler',
 }
 
 SIMPLE_JWT = {
@@ -130,6 +131,8 @@ CORS_ALLOW_HEADERS = [
 # ─── Static & Media ─────────────────────────────────────────────────────────
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID', 'your-client-id')
+GOOGLE_OAUTH2_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', 'your-client-secret')
 
 # ─── Storage (Static & Media) ──────────────────────────────────────────
 # At the top with other paths
@@ -174,7 +177,7 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD')
 DEFAULT_FROM_EMAIL = 'Petrox Assessment <thecbsteam8@gmail.com>'
 
 # ─── Frontend Domain ────────────────────────────────────────────────────────
-FRONTEND_DOMAIN = os.getenv('FRONTEND_DOMAIN', 'http://localhost:3000')
+FRONTEND_DOMAIN = os.getenv('FRONTEND_DOMAIN', 'http://localhost:5173/')
 
 # ─── Production Security Enhancements ───────────────────────────────────────
 if not DEBUG:

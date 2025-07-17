@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenBlacklistView
 )
-from exams.views.auth import RegisterUserAPIView
+from exams.views.auth import RegisterUserAPIView,GoogleAuthView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -14,5 +14,6 @@ urlpatterns = [
     path('api/token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
     
     path('users/', RegisterUserAPIView.as_view(), name='register-user-root'),
+    path('api/auth/google/', GoogleAuthView.as_view(), name='google-auth'),  # Add this line
     path('api/', include('exams.urls')),
 ]
