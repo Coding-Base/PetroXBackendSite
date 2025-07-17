@@ -107,6 +107,8 @@ else:
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.renderers.JSONRenderer',
+
     ],
      'EXCEPTION_HANDLER': 'exams.exceptions.custom_exception_handler',
 }
