@@ -54,7 +54,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
             users = User.objects.filter(is_active=True).exclude(email='')
             total_emails += len(users)
             success_count = 0
-            template_path = BASE_DIR / 'exams/templates/email/email_template.html'
+           
             for user in users:
                 try:
                     # Prepare email context
