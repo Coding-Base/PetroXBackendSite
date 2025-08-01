@@ -1,6 +1,88 @@
 from django.contrib import admin
 from .models import Course, Question, TestSession, GroupTest, Material
 from django.utils.html import format_html
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils import timezone
+from .models import EmailMessage
+
+
+@admin.register(EmailMessage)
+class EmailMessageAdmin(admin.ModelAdmin):
+    list_display = ('subject', 'created_at', 'sent_at', 'send_status')
+    readonly_fields = ('created_at', 'sent_at', 'send_status')
+    fields = (
+        'subject',
+        'content',
+        'button_text',
+        'button_link',
+        'created_at',
+        'sent_at',
+        'send_status'
+    )
+    actions = ['send_emails']
+
+    def send_status(self, obj):
+        if obj.sent_at:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">Sent</span>'
+            )
+        return format_html(
+            '<span style="color: red; font-weight: bold;">Not Sent</span>'
+        )
+    send_status.short_description = 'Status'
+
+    def send_emails(self, request, queryset):
+        for email in queryset:
+            if email.sent_at:
+                self.message_user(
+                    request,
+                    f"Email '{email.subject}' was already sent",
+                    level='WARNING'
+                )
+                continue
+                
+            users = User.objects.filter(is_active=True).exclude(email='')
+            success_count = 0
+            
+            for user in users:
+                context = {
+                    'user': user,
+                    'content': email.content,
+                    'button_text': email.button_text,
+                    'button_link': email.button_link,
+                    'subject': email.subject
+                }
+                
+                html_content = render_to_string('email_template.html', context)
+                text_content = "Please use an HTML-capable email viewer"
+                
+                try:
+                    msg = EmailMultiAlternatives(
+                        subject=email.subject,
+                        body=text_content,
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        to=[user.email]
+                    )
+                    msg.attach_alternative(html_content, "text/html")
+                    msg.send()
+                    success_count += 1
+                except Exception as e:
+                    self.message_user(
+                        request,
+                        f"Failed to send to {user.email}: {str(e)}",
+                        level='ERROR'
+                    )
+            
+            email.sent_at = timezone.now()
+            email.save()
+            self.message_user(
+                request,
+                f"Sent '{email.subject}' to {success_count}/{len(users)} users",
+                level='SUCCESS'
+            )
+    
+    send_emails.short_description = "Send selected emails to all users"
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
