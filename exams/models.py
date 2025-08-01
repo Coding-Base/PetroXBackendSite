@@ -1,32 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
-from exams.storage_backends import GoogleCloudMediaStorage
-
-# models.py - Add to bottom
-class EmailMessage(models.Model):
-    subject = models.CharField(max_length=255)
-    content = models.TextField(help_text="HTML content for the email body")
-    button_text = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True,
-        help_text="Text for the action button (optional)"
-    )
-    button_link = models.URLField(
-        blank=True, 
-        null=True,
-        help_text="URL for the action button (optional)"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    sent_at = models.DateTimeField(blank=True, null=True)
-    
-    def __str__(self):
-        return self.subject
-    
-    @property
-    def status(self):
-        return "Sent" if self.sent_at else "Not Sent"
 
 class Course(models.Model):
     name = models.CharField(max_length=255)
@@ -40,7 +14,7 @@ class Question(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='questions')
     question_text = models.TextField()
     option_a = models.CharField(max_length=255)
-    year = models.CharField(max_length=255, blank=True, null=True)  # Made optional
+    year =  models.CharField(max_length=255, default='2019')
     option_b = models.CharField(max_length=255)
     option_c = models.CharField(max_length=255)
     option_d = models.CharField(max_length=255)
@@ -103,7 +77,7 @@ class Material(models.Model):
     tags = models.CharField(max_length=255, blank=True)
     file = models.FileField(
         upload_to='materials/',
-        storage=GoogleCloudMediaStorage() # Fixed: use string path
+        storage='exams.storage_backends.GoogleCloudMediaStorage'  # Use string reference
     )
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -111,3 +85,28 @@ class Material(models.Model):
     @property
     def file_url(self):
         return self.file.url if self.file else ''
+
+class EmailMessage(models.Model):
+    subject = models.CharField(max_length=255)
+    content = models.TextField(help_text="HTML content for the email body")
+    button_text = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        help_text="Text for the action button (optional)"
+    )
+    button_link = models.URLField(
+        max_length=500,  # Increased length for long URLs
+        blank=True, 
+        null=True,
+        help_text="URL for the action button (optional)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return self.subject
+    
+    @property
+    def status(self):
+        return "Sent" if self.sent_at else "Not Sent"
