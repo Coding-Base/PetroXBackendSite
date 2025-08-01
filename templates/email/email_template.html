@@ -3,92 +3,277 @@
 <head>
     <title>{{ subject }}</title>
     <style>
+        /* Modern reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
+            background-color: #f5f7fa;
             color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .email-container {
             max-width: 600px;
             margin: 0 auto;
-            padding: 20px;
-            background-color: #f8f9fa;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
         }
-        .email-container {
-            background-color: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        
+        .header {
+            background: linear-gradient(135deg, #4b6cb7 0%, #182848 100%);
+            padding: 40px 30px;
+            text-align: center;
+            position: relative;
             overflow: hidden;
         }
-        .header {
-            background-color: #007bff;
+        
+        .header::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%);
+            transform: rotate(30deg);
+        }
+        
+        .logo {
+            position: relative;
+            display: inline-block;
+            font-size: 28px;
+            font-weight: 700;
             color: white;
-            padding: 25px 20px;
-            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
         }
+        
+        .logo::after {
+            content: "";
+            display: block;
+            width: 50px;
+            height: 3px;
+            background: #4bca81;
+            margin: 12px auto 0;
+            border-radius: 2px;
+        }
+        
+        h1 {
+            position: relative;
+            font-size: 28px;
+            font-weight: 700;
+            color: white;
+            margin: 15px 0 0;
+            line-height: 1.3;
+        }
+        
         .content {
-            padding: 30px;
+            padding: 40px 30px;
+            color: #444;
+            font-size: 16px;
         }
-        .button-container {
+        
+        .content p {
+            margin-bottom: 24px;
+            line-height: 1.7;
+        }
+        
+        .content h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 30px 0 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .content ul {
+            margin: 20px 0;
+            padding-left: 25px;
+        }
+        
+        .content li {
+            margin-bottom: 12px;
+            position: relative;
+        }
+        
+        .content li::before {
+            content: "•";
+            color: #4b6cb7;
+            position: absolute;
+            left: -15px;
+            font-size: 18px;
+        }
+        
+        .action-section {
+            background: #f8f9ff;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 30px 0;
             text-align: center;
-            margin: 25px 0;
+            border: 1px solid #eef2f7;
         }
+        
+        .action-text {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
         .action-button {
             display: inline-block;
-            padding: 12px 30px;
-            background-color: #007bff;
+            padding: 15px 35px;
+            background: linear-gradient(135deg, #4bca81 0%, #3aa86d 100%);
             color: white !important;
             text-decoration: none;
-            border-radius: 4px;
-            font-weight: bold;
+            border-radius: 50px;
+            font-weight: 600;
             font-size: 16px;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(75, 202, 129, 0.3);
+            letter-spacing: 0.5px;
         }
+        
         .action-button:hover {
-            background-color: #0056b3;
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(75, 202, 129, 0.4);
         }
+        
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #dde4ec, transparent);
+            margin: 30px 0;
+        }
+        
         .footer {
-            background-color: #f1f3f5;
-            padding: 20px;
+            padding: 25px 30px;
+            background: #f8f9ff;
             text-align: center;
-            font-size: 13px;
+            font-size: 14px;
             color: #6c757d;
+            border-top: 1px solid #eef2f7;
         }
+        
+        .footer p {
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+        
         .unsubscribe-link {
-            color: #6c757d;
+            color: #4b6cb7;
+            text-decoration: none;
+            transition: color 0.2s;
+            font-weight: 500;
+        }
+        
+        .unsubscribe-link:hover {
+            color: #3a5693;
             text-decoration: underline;
         }
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #ffffff;
+        
+        .social-links {
+            margin: 20px 0 15px;
+        }
+        
+        .social-link {
+            display: inline-block;
+            margin: 0 8px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #eef2f7;
+            color: #4b6cb7;
+            text-align: center;
+            line-height: 36px;
+            transition: all 0.3s ease;
+        }
+        
+        .social-link:hover {
+            background: #4b6cb7;
+            color: white;
+            transform: translateY(-3px);
+        }
+        
+        .copyright {
+            font-size: 13px;
+            color: #8a99b5;
+            margin-top: 15px;
+        }
+        
+        @media (max-width: 600px) {
+            .content, .header, .footer {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+            
+            .action-section {
+                padding: 20px 15px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="email-container">
         <div class="header">
-            <div class="logo">Petrox Assessment</div>
-            <h2>{{ subject }}</h2>
+            <div class="logo">PETROX</div>
+            <h1>{{ subject }}</h1>
         </div>
         
         <div class="content">
             {{ content|safe }}
             
             {% if button_text and button_link %}
-            <div class="button-container">
+            <div class="action-section">
+                <div class="action-text">
+                    Ready to take the next step?
+                </div>
                 <a href="{{ button_link }}" class="action-button">
                     {{ button_text }}
                 </a>
             </div>
             {% endif %}
+            
+            <div class="divider"></div>
+            
+            <h2>Latest Platform Updates</h2>
+            <ul>
+                <li>New question banks added for all engineering disciplines</li>
+                <li>Improved performance dashboard with detailed analytics</li>
+                <li>Mobile app now available on iOS and Android</li>
+            </ul>
         </div>
         
         <div class="footer">
-            <p>© 2023 Petrox Assessment Platform. All rights reserved.</p>
+            <p>Sent by Petrox Assessment Platform<br>Empowering engineers through knowledge</p>
+            
+            <div class="social-links">
+                <a href="https://facebook.com" class="social-link">f</a>
+                <a href="https://twitter.com" class="social-link">t</a>
+                <a href="https://linkedin.com" class="social-link">in</a>
+                <a href="https://instagram.com" class="social-link">ig</a>
+            </div>
+            
             <p>
                 <a href="{{ FRONTEND_DOMAIN }}/unsubscribe" class="unsubscribe-link">
                     Unsubscribe from emails
                 </a>
+            </p>
+            
+            <p class="copyright">
+                © 2023 Petrox Assessment Platform. All rights reserved.<br>
+                Address: 123 Innovation Drive, Tech City, TC 10001
             </p>
         </div>
     </div>
