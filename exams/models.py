@@ -2,6 +2,29 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
 
+
+class EmailMessage(models.Model):
+    subject = models.CharField(max_length=255)
+    content = models.TextField(help_text="HTML content for the email body")
+    button_text = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        help_text="Text for the action button (optional)"
+    )
+    button_link = models.URLField(
+        blank=True, 
+        null=True,
+        help_text="URL for the action button (optional)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return self.subject
+
+
+
 class Course(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -85,28 +108,3 @@ class Material(models.Model):
     @property
     def file_url(self):
         return self.file.url if self.file else ''
-
-class EmailMessage(models.Model):
-    subject = models.CharField(max_length=255)
-    content = models.TextField(help_text="HTML content for the email body")
-    button_text = models.CharField(
-        max_length=50, 
-        blank=True, 
-        null=True,
-        help_text="Text for the action button (optional)"
-    )
-    button_link = models.URLField(
-        max_length=500,  # Increased length for long URLs
-        blank=True, 
-        null=True,
-        help_text="URL for the action button (optional)"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    sent_at = models.DateTimeField(blank=True, null=True)
-    
-    def __str__(self):
-        return self.subject
-    
-    @property
-    def status(self):
-        return "Sent" if self.sent_at else "Not Sent"
