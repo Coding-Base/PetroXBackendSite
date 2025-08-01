@@ -3,6 +3,19 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from exams.storage_backends import GoogleCloudMediaStorage
 
+# models.py - Add to the bottom
+class EmailMessage(models.Model):
+    subject = models.CharField(max_length=255)
+    content = models.TextField(help_text="HTML content for the email body")
+    button_text = models.CharField(max_length=50, blank=True, null=True, help_text="Text for the action button (optional)")
+    button_link = models.URLField(blank=True, null=True, help_text="URL for the action button (optional)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.subject} - {'Sent' if self.sent_at else 'Draft'}"
+
+
 class Course(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
