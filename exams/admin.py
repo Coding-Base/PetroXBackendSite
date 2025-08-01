@@ -67,7 +67,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
                     }
                     
                     # Render HTML template
-                    html_content = render_to_string('email_template.html', context)
+                    html_content = render_to_string('email/email_template.html', context)
                     text_content = f"{email.subject}\n\n{email.content}\n\n"
                     
                     if email.button_text and email.button_link:
