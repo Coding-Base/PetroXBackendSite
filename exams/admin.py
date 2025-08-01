@@ -11,12 +11,12 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.conf import settings
 from .models import EmailMessage
+import os
 
-# admin.py - Fixed EmailMessageAdmin
 @admin.register(EmailMessage)
 class EmailMessageAdmin(admin.ModelAdmin):
-    list_display = ('subject', 'created_at', 'sent_at', 'status_display')
-    readonly_fields = ('created_at', 'sent_at', 'status_display')
+    list_display = ('subject', 'created_at', 'sent_at', 'get_status_display')
+    readonly_fields = ('created_at', 'sent_at', 'get_status_display')
     fields = (
         'subject',
         'content',
@@ -24,11 +24,11 @@ class EmailMessageAdmin(admin.ModelAdmin):
         'button_link',
         'created_at',
         'sent_at',
-        'status_display'
+        'get_status_display'
     )
     actions = ['send_emails']
     
-    def status_display(self, obj):
+    def get_status_display(self, obj):
         if obj.sent_at:
             return format_html(
                 '<span style="color: green; font-weight: bold;">✓ Sent</span>'
@@ -36,7 +36,8 @@ class EmailMessageAdmin(admin.ModelAdmin):
         return format_html(
             '<span style="color: #cc0000; font-weight: bold;">✗ Not Sent</span>'
         )
-    status_display.short_description = 'Status'
+    get_status_display.short_description = 'Status'
+    get_status_display.admin_order_field = 'sent_at'
 
     def send_emails(self, request, queryset):
         total_sent = 0
@@ -54,7 +55,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
             users = User.objects.filter(is_active=True).exclude(email='')
             total_emails += len(users)
             success_count = 0
-           
+            
             for user in users:
                 try:
                     # Prepare email context
@@ -67,8 +68,21 @@ class EmailMessageAdmin(admin.ModelAdmin):
                         'FRONTEND_DOMAIN': settings.FRONTEND_DOMAIN
                     }
                     
-                    # Use correct template path
-                    html_content = render_to_string('email/email_template.html', context)
+                    # Try to render template
+                    try:
+                        html_content = render_to_string('email/email_template.html', context)
+                    except Exception as render_error:
+                        # Fallback to simple template if render fails
+                        html_content = f"""
+                        <html>
+                        <body>
+                            <h2>{email.subject}</h2>
+                            <div>{email.content}</div>
+                            {f'<a href="{email.button_link}">{email.button_text}</a>' if email.button_text else ''}
+                            <p>Sent by Petrox Assessment Platform</p>
+                        </body>
+                        </html>
+                        """
                     
                     # Create plain text alternative
                     text_content = f"{email.subject}\n\n{email.content}\n\n"
@@ -114,9 +128,11 @@ class EmailMessageAdmin(admin.ModelAdmin):
     send_emails.short_description = "Send selected emails to all users"
     
     def get_readonly_fields(self, request, obj=None):
+        # Make all fields read-only after sending
         if obj and obj.sent_at:
-            return [f.name for f in self.model._meta.fields] + ['status_display']
+            return [f.name for f in self.model._meta.fields] + ['get_status_display']
         return super().get_readonly_fields(request, obj)
+
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'course', 'uploaded_by', 'uploaded_at', 'download_link')
