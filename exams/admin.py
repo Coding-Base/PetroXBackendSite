@@ -5,12 +5,17 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
 from .models import EmailMessage
-
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils import timezone
+from django.contrib.auth.models import User
+from django.conf import settings
+from .models import EmailMessage
 
 @admin.register(EmailMessage)
 class EmailMessageAdmin(admin.ModelAdmin):
-    list_display = ('subject', 'created_at', 'sent_at', 'send_status')
-    readonly_fields = ('created_at', 'sent_at', 'send_status')
+    list_display = ('subject', 'created_at', 'sent_at', 'status_display')
+    readonly_fields = ('created_at', 'sent_at', 'status_display')
     fields = (
         'subject',
         'content',
@@ -18,21 +23,24 @@ class EmailMessageAdmin(admin.ModelAdmin):
         'button_link',
         'created_at',
         'sent_at',
-        'send_status'
+        'status_display'
     )
     actions = ['send_emails']
-
-    def send_status(self, obj):
+    
+    def status_display(self, obj):
         if obj.sent_at:
             return format_html(
-                '<span style="color: green; font-weight: bold;">Sent</span>'
+                '<span style="color: green; font-weight: bold;">✓ Sent</span>'
             )
         return format_html(
-            '<span style="color: red; font-weight: bold;">Not Sent</span>'
+            '<span style="color: #cc0000; font-weight: bold;">✗ Not Sent</span>'
         )
-    send_status.short_description = 'Status'
+    status_display.short_description = 'Status'
 
     def send_emails(self, request, queryset):
+        total_sent = 0
+        total_emails = 0
+        
         for email in queryset:
             if email.sent_at:
                 self.message_user(
@@ -43,21 +51,31 @@ class EmailMessageAdmin(admin.ModelAdmin):
                 continue
                 
             users = User.objects.filter(is_active=True).exclude(email='')
+            total_emails += len(users)
             success_count = 0
             
             for user in users:
-                context = {
-                    'user': user,
-                    'content': email.content,
-                    'button_text': email.button_text,
-                    'button_link': email.button_link,
-                    'subject': email.subject
-                }
-                
-                html_content = render_to_string('email_template.html', context)
-                text_content = "Please use an HTML-capable email viewer"
-                
                 try:
+                    # Prepare email context
+                    context = {
+                        'user': user,
+                        'content': email.content,
+                        'button_text': email.button_text,
+                        'button_link': email.button_link,
+                        'subject': email.subject,
+                        'FRONTEND_DOMAIN': settings.FRONTEND_DOMAIN
+                    }
+                    
+                    # Render HTML template
+                    html_content = render_to_string('email_template.html', context)
+                    text_content = f"{email.subject}\n\n{email.content}\n\n"
+                    
+                    if email.button_text and email.button_link:
+                        text_content += f"{email.button_text}: {email.button_link}\n\n"
+                    
+                    text_content += f"Unsubscribe: {settings.FRONTEND_DOMAIN}/unsubscribe"
+                    
+                    # Create and send email
                     msg = EmailMultiAlternatives(
                         subject=email.subject,
                         body=text_content,
@@ -67,6 +85,8 @@ class EmailMessageAdmin(admin.ModelAdmin):
                     msg.attach_alternative(html_content, "text/html")
                     msg.send()
                     success_count += 1
+                    total_sent += 1
+                    
                 except Exception as e:
                     self.message_user(
                         request,
@@ -74,15 +94,29 @@ class EmailMessageAdmin(admin.ModelAdmin):
                         level='ERROR'
                     )
             
+            # Update sent status
             email.sent_at = timezone.now()
             email.save()
+            
             self.message_user(
                 request,
                 f"Sent '{email.subject}' to {success_count}/{len(users)} users",
                 level='SUCCESS'
             )
+        
+        self.message_user(
+            request,
+            f"Total: Sent {total_sent} emails out of {total_emails} recipients",
+            level='INFO'
+        )
     
     send_emails.short_description = "Send selected emails to all users"
+    
+    def get_readonly_fields(self, request, obj=None):
+        # Make all fields read-only after sending
+        if obj and obj.sent_at:
+            return [f.name for f in self.model._meta.fields] + ['status_display']
+        return super().get_readonly_fields(request, obj)
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
