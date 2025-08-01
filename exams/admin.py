@@ -12,6 +12,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from .models import EmailMessage
 
+# admin.py - Fixed EmailMessageAdmin
 @admin.register(EmailMessage)
 class EmailMessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'created_at', 'sent_at', 'status_display')
@@ -53,7 +54,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
             users = User.objects.filter(is_active=True).exclude(email='')
             total_emails += len(users)
             success_count = 0
-            
+            template_path = BASE_DIR / 'exams/templates/email/email_template.html'
             for user in users:
                 try:
                     # Prepare email context
@@ -66,13 +67,13 @@ class EmailMessageAdmin(admin.ModelAdmin):
                         'FRONTEND_DOMAIN': settings.FRONTEND_DOMAIN
                     }
                     
-                    # Render HTML template
+                    # Use correct template path
                     html_content = render_to_string('email/email_template.html', context)
-                    text_content = f"{email.subject}\n\n{email.content}\n\n"
                     
+                    # Create plain text alternative
+                    text_content = f"{email.subject}\n\n{email.content}\n\n"
                     if email.button_text and email.button_link:
                         text_content += f"{email.button_text}: {email.button_link}\n\n"
-                    
                     text_content += f"Unsubscribe: {settings.FRONTEND_DOMAIN}/unsubscribe"
                     
                     # Create and send email
@@ -113,11 +114,9 @@ class EmailMessageAdmin(admin.ModelAdmin):
     send_emails.short_description = "Send selected emails to all users"
     
     def get_readonly_fields(self, request, obj=None):
-        # Make all fields read-only after sending
         if obj and obj.sent_at:
             return [f.name for f in self.model._meta.fields] + ['status_display']
         return super().get_readonly_fields(request, obj)
-
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'course', 'uploaded_by', 'uploaded_at', 'download_link')
