@@ -193,7 +193,7 @@ if not DEBUG:
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],  # ADD THIS LINE
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],  # ADD THIS LINE
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
