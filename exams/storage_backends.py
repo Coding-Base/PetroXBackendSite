@@ -16,24 +16,28 @@ logger = logging.getLogger(__name__)
 @deconstructible
 class GoogleCloudMediaStorage(Storage):
     def __init__(self):
-        self.creds_value = getattr(settings, 'GOOGLE_APPLICATION_CREDENTIALS', None)
+        self._in_migration = os.environ.get('ENVIRONMENT') == 'MIGRATION'
         self._client = None
         self._bucket = None
         
-        if not self.creds_value:
-            raise ImproperlyConfigured(
-                "GOOGLE_APPLICATION_CREDENTIALS setting is not configured"
-            )
+        # Only validate credentials if not in migration mode
+        if not self._in_migration:
+            self.creds_value = getattr(settings, 'GOOGLE_APPLICATION_CREDENTIALS', None)
+            
+            if not self.creds_value:
+                raise ImproperlyConfigured(
+                    "GOOGLE_APPLICATION_CREDENTIALS setting is not configured"
+                )
 
     @property
     def client(self):
-        if self._client is None:
+        if self._client is None and not self._in_migration:
             self._client = storage.Client(credentials=self._get_credentials())
         return self._client
 
     @property
     def bucket(self):
-        if self._bucket is None:
+        if self._bucket is None and not self._in_migration:
             bucket_name = getattr(settings, 'GS_BUCKET_NAME', 'petrox-materials')
             self._bucket = self.client.bucket(bucket_name)
         return self._bucket
@@ -52,6 +56,10 @@ class GoogleCloudMediaStorage(Storage):
             )
 
     def _save(self, name, content):
+        if self._in_migration:
+            # Dummy implementation for migrations
+            return name
+            
         try:
             blob = self.bucket.blob(name)
             blob.upload_from_file(
@@ -77,6 +85,10 @@ class GoogleCloudMediaStorage(Storage):
             raise RuntimeError(f"File upload failed: {str(e)}") from e
 
     def exists(self, name):
+        if self._in_migration:
+            # Dummy implementation for migrations
+            return False
+            
         try:
             blob = self.bucket.blob(name)
             return blob.exists()
@@ -84,4 +96,8 @@ class GoogleCloudMediaStorage(Storage):
             return False
 
     def url(self, name):
+        if self._in_migration:
+            # Dummy URL for migrations
+            return f"https://storage.googleapis.com/dummy-bucket/{name}"
+            
         return f"https://storage.googleapis.com/{self.bucket.name}/{name}"
