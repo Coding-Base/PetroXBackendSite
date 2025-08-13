@@ -140,10 +140,17 @@ if not DEBUG:
         "https://petroxtestbackend.onrender.com",
         "https://petrox-test-frontend.onrender.com"
     ]
-
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 # Add this to fix preflight requests
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
-
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+EMAIL_HOST_USER = 'thecbsteam8@gmail.com'
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD')
+DEFAULT_FROM_EMAIL = 'Petrox Assessment <thecbsteam8@gmail.com>'
 # Channels configuration (if using WebSockets)
 CHANNEL_LAYERS = {
     "default": {
@@ -179,3 +186,4 @@ LOGGING = {
         },
     },
 }
+
