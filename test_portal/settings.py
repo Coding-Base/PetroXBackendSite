@@ -14,10 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-for-dev')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-# FIXED: Allow all for testing, or specify Render domain
 ALLOWED_HOSTS = ['*']
-
-# CSRF TRUSTED ORIGINS for production login
 CSRF_TRUSTED_ORIGINS = ['https://petroxtestbackend.onrender.com']
 
 # ─── Applications ────────────────────────────────────────────────────────────
@@ -35,7 +32,6 @@ INSTALLED_APPS = [
     'channels',
     'storages',
     'exams',
-    
 ]
 
 # ─── Middleware ──────────────────────────────────────────────────────────────
@@ -99,22 +95,24 @@ CORS_ALLOW_HEADERS = [
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# ─── Storage (Static & Media) ──────────────────────────────────────────
-# The STORAGES setting (new in Django 4.2) replaces STATICFILES_STORAGE and DEFAULT_FILE_STORAGE.
-STORAGES = {
-    # Default storage for media files (Google Cloud Storage)
-    "default": {"BACKEND": "storages.backends.gcloud.GoogleCloudStorage"},
-    # Storage for static files (Whitenoise)
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-}
-
-GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')  # now dynamic
-if GCS_CREDENTIALS_PATH:
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCS_CREDENTIALS_PATH
-
 GS_BUCKET_NAME = 'petrox-materials'
-MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/'
 GS_DEFAULT_ACL = None
+
+if not DEBUG and os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    # Production with Google Cloud Storage
+    STORAGES = {
+        "default": {"BACKEND": "storages.backends.gcloud.GoogleCloudStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    }
+    MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/'
+else:
+    # Local storage
+    MEDIA_ROOT = BASE_DIR / "media"
+    MEDIA_URL = "/media/"
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    }
 
 # ─── Channels ────────────────────────────────────────────────────────────────
 CHANNEL_LAYERS = {
