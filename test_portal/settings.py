@@ -14,7 +14,15 @@ SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,petroxtestbackend.onrender.com").split(",")
+# FIXED: Dynamic allowed hosts with Render support
+allowed_hosts_str = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,petroxtestbackend.onrender.com")
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(",")]
+
+# Automatically add Render's hostname
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    if RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
 # Application definition
 INSTALLED_APPS = [
@@ -31,7 +39,7 @@ INSTALLED_APPS = [
 ]
 
 # CORS Configuration - FIXED
-CORS_ALLOW_ALL_ORIGINS = False  # More secure to specify allowed origins
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     "https://petrox-test-frontend.onrender.com",
     "http://localhost:3000",
@@ -67,7 +75,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # Add this for static files
+    'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
 ROOT_URLCONF = "test_portal.urls"
@@ -96,7 +104,7 @@ DATABASES = {
     "default": dj_database_url.config(
         default=os.getenv("DATABASE_URL"),
         conn_max_age=600,
-        ssl_require=not DEBUG  # Only require SSL in production
+        ssl_require=not DEBUG
     )
 }
 
@@ -186,4 +194,3 @@ LOGGING = {
         },
     },
 }
-
