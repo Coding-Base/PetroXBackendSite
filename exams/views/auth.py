@@ -25,19 +25,29 @@ class RegisterUserAPIView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
 
+        # Add email validation
         if not username or not password:
             raise ValidationError({"detail": "Username and password are required."})
+        
+        if not email:
+            raise ValidationError({"detail": "Email is required."})
 
         try:
             user = User.objects.create_user(
                 username=username,
-                email=email,
+                email=email,  # Make sure email is included
                 password=password
             )
         except IntegrityError:
             return Response(
                 {"detail": "Username already exists."},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:  # Catch other potential errors
+            logger.error(f"Registration error: {str(e)}")
+            return Response(
+                {"detail": "Could not create user. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
         serializer = UserSerializer(user)
@@ -200,3 +210,4 @@ class GoogleAuthView(APIView):
 #                 raise ValueError("Could not generate unique username")
                 
 #         return username
+
