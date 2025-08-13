@@ -1,6 +1,7 @@
 # exams/urls.py
 from django.urls import path
 from .views.auth import RegisterUserAPIView
+from .debug_views import debug_auth
 from .views.courses import CourseListAPIView
 from .views.materials import (
     MaterialUploadView, 
@@ -42,4 +43,6 @@ urlpatterns = [
     path('questions/<int:question_id>/status/', QuestionApprovalView.as_view(), name='update-question-status'),
     path('user/upload-stats/', user_upload_stats, name='user-upload-stats'),
     path('preview-pass-questions/', PreviewPassQuestionsView.as_view(), name='preview-pass-questions'),
+    path('debug-auth/', debug_auth),
 ]
+
