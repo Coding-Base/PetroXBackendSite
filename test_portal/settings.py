@@ -1,17 +1,20 @@
 import os
-import dj_database_url
 from pathlib import Path
-import json
+import dj_database_url
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY", "django-insecure-replace-this-in-production"
-)
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key")
 
-DEBUG = os.environ.get("DEBUG", "False") == "True"
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Application definition
 INSTALLED_APPS = [
@@ -21,8 +24,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "storages",  # Needed for Google Cloud Storage
-    # Add your other apps here
+    # your custom apps here
 ]
 
 MIDDLEWARE = [
@@ -35,7 +37,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "yourproject.urls"
+ROOT_URLCONF = "test_portal.urls"
 
 TEMPLATES = [
     {
@@ -53,40 +55,24 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "yourproject.wsgi.application"
+WSGI_APPLICATION = "test_portal.wsgi.application"
+ASGI_APPLICATION = "test_portal.asgi.application"
 
 # Database
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if DATABASE_URL:
-    DATABASES = {
-        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": os.environ.get("DB_ENGINE", "django.db.backends.postgresql"),
-            "NAME": os.environ.get("DB_NAME", "postgres"),
-            "USER": os.environ.get("DB_USER", "postgres"),
-            "PASSWORD": os.environ.get("DB_PASSWORD", ""),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
-        }
-    }
+DATABASES = {
+    "default": dj_database_url.config(
+        default=os.getenv("DATABASE_URL"),
+        conn_max_age=600,
+        ssl_require=True
+    )
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 # Internationalization
@@ -98,18 +84,14 @@ USE_TZ = True
 # Static files
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 
-# Media (Google Cloud Storage)
-DEFAULT_FILE_STORAGE = "storages.backends.gcloud.GoogleCloudStorage"
-GS_BUCKET_NAME = os.environ.get("GS_BUCKET_NAME")
+# Media files
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
-# Load Google credentials from env variable
-google_credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-if google_credentials_path and os.path.exists(google_credentials_path):
-    from google.oauth2 import service_account
-    GS_CREDENTIALS = service_account.Credentials.from_service_account_file(
-        google_credentials_path
-    )
+# Google Cloud credentials from Render
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
