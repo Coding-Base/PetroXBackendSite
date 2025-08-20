@@ -4,6 +4,9 @@ import dj_database_url
 from dotenv import load_dotenv
 from datetime import timedelta
 
+# corsheaders defaults
+from corsheaders.defaults import default_headers, default_methods
+
 # Load environment variables
 load_dotenv()
 
@@ -41,34 +44,42 @@ INSTALLED_APPS = [
     'exams',
 ]
 
-# CORS Configuration - FIXED
-CORS_ALLOW_ALL_ORIGINS = True
+# --------------------------
+# CORS Configuration (explicit & robust)
+# --------------------------
+# For production prefer explicit origins instead of allowing all
+CORS_ALLOW_ALL_ORIGINS = False
+
 CORS_ALLOWED_ORIGINS = [
     "https://petrox-test-frontend.onrender.com",
+    "https://petroxtestbackend.onrender.com",   # if needed
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
+
+# If you do not use cookie/session auth from the browser, leave this False
+# (you're using Bearer tokens which don't require cookies)
+CORS_ALLOW_CREDENTIALS = False
+
+# Keep default methods and headers, and append any custom ones you need
+CORS_ALLOW_METHODS = list(default_methods)  # includes OPTIONS, GET, POST, PUT, PATCH, DELETE, HEAD
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'authorization',      # ensure Authorization header is allowed
+    'content-type',       # usually present in default_headers but duplicated is fine
+    'x-upload-timeout',   # your custom header seen in the request
+    # add any other custom headers you use
 ]
 
+# Optional: expose headers (useful if you need to read custom response headers)
+CORS_EXPOSE_HEADERS = [
+    'Content-Disposition',
+    'x-total-count',
+]
+
+# --------------------------
+# Middleware (CorsMiddleware must be early)
+# --------------------------
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Must be at the top!
     "django.middleware.security.SecurityMiddleware",
@@ -139,7 +150,6 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    # optional: smaller page sizes, etc.
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 }
@@ -169,9 +179,10 @@ if not DEBUG:
         "https://petroxtestbackend.onrender.com",
         "https://petrox-test-frontend.onrender.com"
     ]
+
+# Ensure this is not set to a restrictive value that breaks requests
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
-# Add this to fix preflight requests
-SECURE_CROSS_ORIGIN_OPENER_POLICY = None
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
@@ -180,6 +191,7 @@ EMAIL_USE_SSL = False
 EMAIL_HOST_USER = 'thecbsteam8@gmail.com'
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD')
 DEFAULT_FROM_EMAIL = 'Petrox Assessment <thecbsteam8@gmail.com>'
+
 # Channels configuration (if using WebSockets)
 CHANNEL_LAYERS = {
     "default": {
@@ -215,7 +227,3 @@ LOGGING = {
         },
     },
 }
-
-
-
-
