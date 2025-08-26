@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from .models import Course, Question, TestSession, GroupTest, Material, EmailMessage
 from django.utils.html import format_html
 from django.core import mail
@@ -7,12 +7,11 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.conf import settings
 import logging
-import os
 import time
 from django.core.paginator import Paginator
-from django.contrib import messages
 
 logger = logging.getLogger(__name__)
+
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
@@ -27,6 +26,7 @@ class MaterialAdmin(admin.ModelAdmin):
             return format_html('<a href="{}" target="_blank">Download</a>', obj.file_url)
         return "-"
     download_link.short_description = 'File'
+
 
 @admin.register(GroupTest)
 class GroupTestAdmin(admin.ModelAdmin):
@@ -43,6 +43,7 @@ class GroupTestAdmin(admin.ModelAdmin):
         return format_html('<br>'.join(obj.invitees.split(','))) if obj.invitees else '-'
     invitee_list.short_description = 'Invitee List'
 
+
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'question_count', 'status')
@@ -53,18 +54,19 @@ class CourseAdmin(admin.ModelAdmin):
         return obj.questions.count()
     question_count.short_description = 'Questions'
 
+
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 
-        'truncated_question', 
+        'id',
+        'truncated_question',
         'option_a',
         'option_b',
         'option_c',
         'option_d',
         'correct_option',
-        'course', 
-        'status_badge', 
+        'course',
+        'status_badge',
         'uploaded_by',
         'source_file',
         'created_at_display'
@@ -126,14 +128,15 @@ class QuestionAdmin(admin.ModelAdmin):
             obj.uploaded_by = request.user
         super().save_model(request, obj, form, change)
 
+
 @admin.register(TestSession)
 class TestSessionAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 
-        'user', 
-        'course', 
-        'start_time', 
-        'end_time', 
+        'id',
+        'user',
+        'course',
+        'start_time',
+        'end_time',
         'score_percentage',
         'duration_formatted'
     )
@@ -163,6 +166,7 @@ class TestSessionAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return False
 
+
 @admin.register(EmailMessage)
 class EmailMessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'created_at', 'sent_at', 'status_display')
@@ -177,7 +181,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
         'status_display'
     )
     actions = ['send_emails']
-    
+
     def status_display(self, obj):
         if obj.sent_at:
             return format_html(
@@ -189,13 +193,12 @@ class EmailMessageAdmin(admin.ModelAdmin):
     status_display.short_description = 'Status'
 
     def send_emails(self, request, queryset):
-        """Short-term batched email sender to reduce memory / time spikes.
+        """
+        Short-term batched email sender to reduce memory / time spikes.
 
-        Behavior changes vs previous implementation:
-        - Sends recipients in DB-level batches (uses Paginator on a QuerySet) so we don't load all users into memory.
-        - Uses small pauses between batches (configurable) to avoid throttling and reduce CPU/IO spikes.
-        - Uses django.contrib.messages constants for message levels.
-        - Keeps a single SMTP connection open across batches for efficiency.
+        - Uses Paginator to avoid loading all users into memory.
+        - Keeps single SMTP connection open across batches for efficiency.
+        - Small pause between batches (configurable via settings).
         """
         # Prepare mail connection
         connection = mail.get_connection()
@@ -207,13 +210,12 @@ class EmailMessageAdmin(admin.ModelAdmin):
             return
 
         total_sent = 0
-        total_emails = 0
 
-        # Queryset of users (will be paginated to avoid loading all users at once)
+        # Base queryset (will be paginated)
         users_qs = User.objects.filter(is_active=True).exclude(email='').order_by('id')
         total_emails = users_qs.count()
 
-        # Batch configuration (can be customized in settings)
+        # Configurable batch settings
         batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 20)
         pause_seconds = getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5)
 
@@ -224,20 +226,19 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
             success_count = 0
 
-            # Paginate the queryset so Django issues LIMIT/OFFSET queries per page
             paginator = Paginator(users_qs, batch_size)
             for page_num in paginator.page_range:
                 try:
                     page = paginator.page(page_num)
                 except Exception as e:
-                    logger.error(f"Failed to fetch page {page_num}: {e}")
+                    logger.exception("Failed to fetch page %s: %s", page_num, e)
                     continue
 
                 email_messages = []
 
                 for user in page.object_list:
                     try:
-                        # Prepare context for template rendering (we still have user object here)
+                        # Prepare template context
                         context = {
                             'user': user,
                             'content': email_obj.content,
@@ -247,13 +248,13 @@ class EmailMessageAdmin(admin.ModelAdmin):
                             'FRONTEND_DOMAIN': getattr(settings, 'FRONTEND_DOMAIN', '')
                         }
 
-                        # Render HTML with fallback
+                        # Try to render the HTML template; fallback if it fails
                         try:
                             html_content = render_to_string('email/email_template.html', context)
                         except Exception as render_error:
-                            logger.exception(f"Template render error for user {user.email}: {render_error}")
+                            logger.exception("Template render error for user %s: %s", getattr(user, 'email', '<no email>'), render_error)
 
-                            # Build a simple fallback HTML without nested f-strings to avoid syntax issues
+                            # safe building of optional link (avoid nested f-strings with backslashes)
                             link_html = ''
                             if email_obj.button_text and email_obj.button_link:
                                 link_html = '<a href="{0}">{1}</a>'.format(email_obj.button_link, email_obj.button_text)
@@ -267,19 +268,13 @@ class EmailMessageAdmin(admin.ModelAdmin):
                                 '</body></html>'
                             ).format(subject=email_obj.subject, content=email_obj.content, link_html=link_html)
 
-                        # Plain text fallback
-                        text_content = f"{email_obj.subject}
-
-{email_obj.content}
-
-"
+                        # Plain text fallback (built with .format to avoid multiline f-string issues)
+                        text_content = "{}\n\n{}\n\n".format(email_obj.subject, email_obj.content)
                         if email_obj.button_text and email_obj.button_link:
-                            text_content += f"{email_obj.button_text}: {email_obj.button_link}
+                            text_content += "{}: {}\n\n".format(email_obj.button_text, email_obj.button_link)
+                        text_content += "Unsubscribe: {}/unsubscribe".format(getattr(settings, 'FRONTEND_DOMAIN', '').rstrip('/'))
 
-"
-                        text_content += f"Unsubscribe: {getattr(settings, 'FRONTEND_DOMAIN', '')}/unsubscribe"
-
-                        # Build message
+                        # Build EmailMultiAlternatives
                         msg = mail.EmailMultiAlternatives(
                             subject=email_obj.subject,
                             body=text_content,
@@ -291,38 +286,38 @@ class EmailMessageAdmin(admin.ModelAdmin):
                         email_messages.append(msg)
 
                     except Exception as e:
-                        logger.exception(f"Email preparation failed for {getattr(user, 'email', None)}: {e}")
-                        # do not stop the whole process for a single failure
+                        logger.exception("Email preparation failed for %s: %s", getattr(user, 'email', None), e)
+                        # don't stop on single user failure
 
-                # Try to send this batch
+                # send this batch
                 try:
                     if email_messages:
                         connection.send_messages(email_messages)
                         sent_count = len(email_messages)
                         success_count += sent_count
                         total_sent += sent_count
-                        logger.info(f"Sent batch {page_num}/{paginator.num_pages} ({sent_count} emails)")
+                        logger.info("Sent batch %s/%s (%s emails)", page_num, paginator.num_pages, sent_count)
                 except Exception as e:
-                    logger.exception(f"Failed to send batch {page_num}: {e}")
+                    logger.exception("Failed to send batch %s: %s", page_num, e)
                     self.message_user(request, f"Failed to send batch {page_num}: {e}", level=messages.ERROR)
 
-                # Short pause between batches to reduce spikes / throttling
+                # small pause to reduce spikes
                 try:
                     time.sleep(pause_seconds)
                 except Exception:
                     pass
 
-            # Mark this EmailMessage as sent (timestamp)
+            # mark as sent
             email_obj.sent_at = timezone.now()
             email_obj.save(update_fields=['sent_at'])
 
             self.message_user(
                 request,
-                f"Sent '{email_obj.subject}' to {success_count}/{total_emails} users",
+                "Sent '{}' to {}/{} users".format(email_obj.subject, success_count, total_emails),
                 level=messages.SUCCESS
             )
 
-        # Close connection
+        # close connection
         try:
             connection.close()
         except Exception:
@@ -330,12 +325,12 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
         self.message_user(
             request,
-            f"Total: Sent {total_sent} emails out of {total_emails} recipients",
+            "Total: Sent {} emails out of {} recipients".format(total_sent, total_emails),
             level=messages.INFO
         )
-    
+
     send_emails.short_description = "Send selected emails to all users"
-    
+
     def get_readonly_fields(self, request, obj=None):
         # Make all fields read-only after sending
         if obj and obj.sent_at:
