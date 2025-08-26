@@ -21,6 +21,8 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 # FIXED: Dynamic allowed hosts with Render support
 allowed_hosts_str = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,petroxtestbackend.onrender.com")
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(",")]
+EMAIL_BATCH_SIZE = 20        # default is 20
+EMAIL_BATCH_PAUSE = 0.5     # seconds to sleep between batches
 
 # Automatically add Render's hostname
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -227,4 +229,5 @@ LOGGING = {
         },
     },
 }
+
 
