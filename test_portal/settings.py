@@ -49,7 +49,7 @@ INSTALLED_APPS = [
 # --------------------------
 # For production prefer explicit origins instead of allowing all
 CORS_ALLOW_ALL_ORIGINS = False
-
+FRONTEND_DOMAIN = os.getenv('FRONTEND_DOMAIN', 'http://localhost:3000')
 CORS_ALLOWED_ORIGINS = [
     "https://petrox-test-frontend.onrender.com",
     "https://petroxtestbackend.onrender.com",   # if needed
@@ -227,3 +227,4 @@ LOGGING = {
         },
     },
 }
+
