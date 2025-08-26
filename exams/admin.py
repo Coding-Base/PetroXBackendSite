@@ -9,6 +9,8 @@ from django.conf import settings
 import logging
 import time
 from django.core.paginator import Paginator
+import socket
+import ssl
 
 logger = logging.getLogger(__name__)
 
@@ -194,14 +196,11 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
     def send_emails(self, request, queryset):
         """
-        Short-term batched email sender to reduce memory / time spikes.
-
-        - Uses Paginator to avoid loading all users into memory.
-        - Keeps single SMTP connection open across batches for efficiency.
-        - Small pause between batches (configurable via settings).
+        Batched email sender with SMTP timeout + resilient batch handling.
+        Short-term mitigation to avoid worker timeouts / OOM.
         """
-        # Prepare mail connection
-        connection = mail.get_connection()
+        # Use a connection with an explicit socket timeout so we fail fast on network stalls
+        connection = mail.get_connection(timeout=getattr(settings, 'EMAIL_SMTP_TIMEOUT', 20))
         try:
             connection.open()
         except Exception as e:
@@ -211,22 +210,24 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
         total_sent = 0
 
-        # Base queryset (will be paginated)
+        # base queryset (paginated)
         users_qs = User.objects.filter(is_active=True).exclude(email='').order_by('id')
         total_emails = users_qs.count()
 
-        # Configurable batch settings
-        batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 20)
-        pause_seconds = getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5)
+        # batch config (defaults tuned for Render)
+        default_batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 5)
+        batch_size = max(1, int(default_batch_size))
+        pause_seconds = float(getattr(settings, 'EMAIL_BATCH_PAUSE', 1.0))
 
+        # iterate through selected EmailMessage objects
         for email_obj in queryset:
             if email_obj.sent_at:
                 self.message_user(request, f"Email '{email_obj.subject}' was already sent", level=messages.WARNING)
                 continue
 
             success_count = 0
-
             paginator = Paginator(users_qs, batch_size)
+
             for page_num in paginator.page_range:
                 try:
                     page = paginator.page(page_num)
@@ -235,10 +236,8 @@ class EmailMessageAdmin(admin.ModelAdmin):
                     continue
 
                 email_messages = []
-
                 for user in page.object_list:
                     try:
-                        # Prepare template context
                         context = {
                             'user': user,
                             'content': email_obj.content,
@@ -248,13 +247,11 @@ class EmailMessageAdmin(admin.ModelAdmin):
                             'FRONTEND_DOMAIN': getattr(settings, 'FRONTEND_DOMAIN', '')
                         }
 
-                        # Try to render the HTML template; fallback if it fails
+                        # render template; fallback if it fails
                         try:
                             html_content = render_to_string('email/email_template.html', context)
                         except Exception as render_error:
                             logger.exception("Template render error for user %s: %s", getattr(user, 'email', '<no email>'), render_error)
-
-                            # safe building of optional link (avoid nested f-strings with backslashes)
                             link_html = ''
                             if email_obj.button_text and email_obj.button_link:
                                 link_html = '<a href="{0}">{1}</a>'.format(email_obj.button_link, email_obj.button_text)
@@ -268,13 +265,12 @@ class EmailMessageAdmin(admin.ModelAdmin):
                                 '</body></html>'
                             ).format(subject=email_obj.subject, content=email_obj.content, link_html=link_html)
 
-                        # Plain text fallback (built with .format to avoid multiline f-string issues)
+                        # plain-text
                         text_content = "{}\n\n{}\n\n".format(email_obj.subject, email_obj.content)
                         if email_obj.button_text and email_obj.button_link:
                             text_content += "{}: {}\n\n".format(email_obj.button_text, email_obj.button_link)
                         text_content += "Unsubscribe: {}/unsubscribe".format(getattr(settings, 'FRONTEND_DOMAIN', '').rstrip('/'))
 
-                        # Build EmailMultiAlternatives
                         msg = mail.EmailMultiAlternatives(
                             subject=email_obj.subject,
                             body=text_content,
@@ -287,9 +283,9 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
                     except Exception as e:
                         logger.exception("Email preparation failed for %s: %s", getattr(user, 'email', None), e)
-                        # don't stop on single user failure
+                        # continue to next user
 
-                # send this batch
+                # try to send the batch; handle socket/ssl timeouts explicitly
                 try:
                     if email_messages:
                         connection.send_messages(email_messages)
@@ -297,17 +293,21 @@ class EmailMessageAdmin(admin.ModelAdmin):
                         success_count += sent_count
                         total_sent += sent_count
                         logger.info("Sent batch %s/%s (%s emails)", page_num, paginator.num_pages, sent_count)
+                except (socket.timeout, ssl.SSLError) as net_err:
+                    logger.exception("Network/SMTP timeout or SSL error sending batch %s: %s", page_num, net_err)
+                    self.message_user(request, f"Network error sending batch {page_num}: {net_err}", level=messages.ERROR)
+                    # Skip this batch and continue — avoid crashing worker
                 except Exception as e:
                     logger.exception("Failed to send batch %s: %s", page_num, e)
                     self.message_user(request, f"Failed to send batch {page_num}: {e}", level=messages.ERROR)
 
-                # small pause to reduce spikes
+                # brief pause between batches to reduce spikes
                 try:
                     time.sleep(pause_seconds)
                 except Exception:
                     pass
 
-            # mark as sent
+            # mark email object as sent (even if some batches failed — adjust if you want stricter semantics)
             email_obj.sent_at = timezone.now()
             email_obj.save(update_fields=['sent_at'])
 
@@ -332,7 +332,6 @@ class EmailMessageAdmin(admin.ModelAdmin):
     send_emails.short_description = "Send selected emails to all users"
 
     def get_readonly_fields(self, request, obj=None):
-        # Make all fields read-only after sending
         if obj and obj.sent_at:
             return [f.name for f in self.model._meta.fields] + ['status_display']
         return super().get_readonly_fields(request, obj)
