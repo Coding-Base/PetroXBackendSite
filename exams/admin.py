@@ -252,19 +252,31 @@ class EmailMessageAdmin(admin.ModelAdmin):
                             html_content = render_to_string('email/email_template.html', context)
                         except Exception as render_error:
                             logger.exception(f"Template render error for user {user.email}: {render_error}")
+
+                            # Build a simple fallback HTML without nested f-strings to avoid syntax issues
+                            link_html = ''
+                            if email_obj.button_text and email_obj.button_link:
+                                link_html = '<a href="{0}">{1}</a>'.format(email_obj.button_link, email_obj.button_text)
+
                             html_content = (
-                                f"<html><body>"
-                                f"<h2>{email_obj.subject}</h2>"
-                                f"<div>{email_obj.content}</div>"
-                                f"{f'<a href=\"{email_obj.button_link}\">{email_obj.button_text}</a>' if email_obj.button_text else ''}"
-                                f"<p>Sent by Petrox Assessment Platform</p>"
-                                f"</body></html>"
-                            )
+                                '<html><body>'
+                                '<h2>{subject}</h2>'
+                                '<div>{content}</div>'
+                                '{link_html}'
+                                '<p>Sent by Petrox Assessment Platform</p>'
+                                '</body></html>'
+                            ).format(subject=email_obj.subject, content=email_obj.content, link_html=link_html)
 
                         # Plain text fallback
-                        text_content = f"{email_obj.subject}\n\n{email_obj.content}\n\n"
+                        text_content = f"{email_obj.subject}
+
+{email_obj.content}
+
+"
                         if email_obj.button_text and email_obj.button_link:
-                            text_content += f"{email_obj.button_text}: {email_obj.button_link}\n\n"
+                            text_content += f"{email_obj.button_text}: {email_obj.button_link}
+
+"
                         text_content += f"Unsubscribe: {getattr(settings, 'FRONTEND_DOMAIN', '')}/unsubscribe"
 
                         # Build message
