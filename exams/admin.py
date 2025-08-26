@@ -8,6 +8,9 @@ from django.contrib.auth.models import User
 from django.conf import settings
 import logging
 import os
+import time
+from django.core.paginator import Paginator
+from django.contrib import messages
 
 logger = logging.getLogger(__name__)
 
@@ -186,116 +189,137 @@ class EmailMessageAdmin(admin.ModelAdmin):
     status_display.short_description = 'Status'
 
     def send_emails(self, request, queryset):
-        # Create a single connection for all emails
+        """Short-term batched email sender to reduce memory / time spikes.
+
+        Behavior changes vs previous implementation:
+        - Sends recipients in DB-level batches (uses Paginator on a QuerySet) so we don't load all users into memory.
+        - Uses small pauses between batches (configurable) to avoid throttling and reduce CPU/IO spikes.
+        - Uses django.contrib.messages constants for message levels.
+        - Keeps a single SMTP connection open across batches for efficiency.
+        """
+        # Prepare mail connection
         connection = mail.get_connection()
-        connection.open()
-        
+        try:
+            connection.open()
+        except Exception as e:
+            logger.exception("Failed to open mail connection")
+            self.message_user(request, f"Failed to open mail connection: {e}", level=messages.ERROR)
+            return
+
         total_sent = 0
         total_emails = 0
-        
-        for email in queryset:
-            if email.sent_at:
-                self.message_user(
-                    request,
-                    f"Email '{email.subject}' was already sent",
-                    level='WARNING'
-                )
+
+        # Queryset of users (will be paginated to avoid loading all users at once)
+        users_qs = User.objects.filter(is_active=True).exclude(email='').order_by('id')
+        total_emails = users_qs.count()
+
+        # Batch configuration (can be customized in settings)
+        batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 20)
+        pause_seconds = getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5)
+
+        for email_obj in queryset:
+            if email_obj.sent_at:
+                self.message_user(request, f"Email '{email_obj.subject}' was already sent", level=messages.WARNING)
                 continue
-                
-            # Optimized query to only get needed fields
-            users = User.objects.filter(is_active=True).exclude(email='').only('email')
-            total_emails += len(users)
+
             success_count = 0
-            
-            # Send emails in batches
-            batch_size = 20
-            for i in range(0, len(users), batch_size):
-                batch_users = users[i:i+batch_size]
+
+            # Paginate the queryset so Django issues LIMIT/OFFSET queries per page
+            paginator = Paginator(users_qs, batch_size)
+            for page_num in paginator.page_range:
+                try:
+                    page = paginator.page(page_num)
+                except Exception as e:
+                    logger.error(f"Failed to fetch page {page_num}: {e}")
+                    continue
+
                 email_messages = []
-                
-                for user in batch_users:
+
+                for user in page.object_list:
                     try:
-                        # Prepare context
+                        # Prepare context for template rendering (we still have user object here)
                         context = {
                             'user': user,
-                            'content': email.content,
-                            'button_text': email.button_text,
-                            'button_link': email.button_link,
-                            'subject': email.subject,
-                            'FRONTEND_DOMAIN': settings.FRONTEND_DOMAIN
+                            'content': email_obj.content,
+                            'button_text': email_obj.button_text,
+                            'button_link': email_obj.button_link,
+                            'subject': email_obj.subject,
+                            'FRONTEND_DOMAIN': getattr(settings, 'FRONTEND_DOMAIN', '')
                         }
-                        
-                        # Render template with fallback
+
+                        # Render HTML with fallback
                         try:
                             html_content = render_to_string('email/email_template.html', context)
                         except Exception as render_error:
-                            logger.error(f"Template render error: {render_error}")
-                            html_content = f"""
-                            <html>
-                            <body>
-                                <h2>{email.subject}</h2>
-                                <div>{email.content}</div>
-                                {f'<a href="{email.button_link}">{email.button_text}</a>' if email.button_text else ''}
-                                <p>Sent by Petrox Assessment Platform</p>
-                            </body>
-                            </html>
-                            """
-                        
-                        # Create plain text version
-                        text_content = f"{email.subject}\n\n{email.content}\n\n"
-                        if email.button_text and email.button_link:
-                            text_content += f"{email.button_text}: {email.button_link}\n\n"
-                        text_content += f"Unsubscribe: {settings.FRONTEND_DOMAIN}/unsubscribe"
-                        
-                        # Create email message
+                            logger.exception(f"Template render error for user {user.email}: {render_error}")
+                            html_content = (
+                                f"<html><body>"
+                                f"<h2>{email_obj.subject}</h2>"
+                                f"<div>{email_obj.content}</div>"
+                                f"{f'<a href=\"{email_obj.button_link}\">{email_obj.button_text}</a>' if email_obj.button_text else ''}"
+                                f"<p>Sent by Petrox Assessment Platform</p>"
+                                f"</body></html>"
+                            )
+
+                        # Plain text fallback
+                        text_content = f"{email_obj.subject}\n\n{email_obj.content}\n\n"
+                        if email_obj.button_text and email_obj.button_link:
+                            text_content += f"{email_obj.button_text}: {email_obj.button_link}\n\n"
+                        text_content += f"Unsubscribe: {getattr(settings, 'FRONTEND_DOMAIN', '')}/unsubscribe"
+
+                        # Build message
                         msg = mail.EmailMultiAlternatives(
-                            subject=email.subject,
+                            subject=email_obj.subject,
                             body=text_content,
-                            from_email=settings.DEFAULT_FROM_EMAIL,
+                            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
                             to=[user.email],
-                            connection=connection  # Use shared connection
+                            connection=connection
                         )
                         msg.attach_alternative(html_content, "text/html")
                         email_messages.append(msg)
-                        
+
                     except Exception as e:
-                        logger.error(f"Email preparation failed: {e}")
-                        self.message_user(
-                            request,
-                            f"Failed to prepare email for {user.email}: {str(e)}",
-                            level='ERROR'
-                        )
-                
-                # Send the batch
+                        logger.exception(f"Email preparation failed for {getattr(user, 'email', None)}: {e}")
+                        # do not stop the whole process for a single failure
+
+                # Try to send this batch
                 try:
-                    connection.send_messages(email_messages)
-                    success_count += len(email_messages)
-                    total_sent += len(email_messages)
+                    if email_messages:
+                        connection.send_messages(email_messages)
+                        sent_count = len(email_messages)
+                        success_count += sent_count
+                        total_sent += sent_count
+                        logger.info(f"Sent batch {page_num}/{paginator.num_pages} ({sent_count} emails)")
                 except Exception as e:
-                    logger.error(f"Email sending failed: {e}")
-                    self.message_user(
-                        request,
-                        f"Failed to send batch: {str(e)}",
-                        level='ERROR'
-                    )
-            
-            # Update sent status
-            email.sent_at = timezone.now()
-            email.save()
-            
+                    logger.exception(f"Failed to send batch {page_num}: {e}")
+                    self.message_user(request, f"Failed to send batch {page_num}: {e}", level=messages.ERROR)
+
+                # Short pause between batches to reduce spikes / throttling
+                try:
+                    time.sleep(pause_seconds)
+                except Exception:
+                    pass
+
+            # Mark this EmailMessage as sent (timestamp)
+            email_obj.sent_at = timezone.now()
+            email_obj.save(update_fields=['sent_at'])
+
             self.message_user(
                 request,
-                f"Sent '{email.subject}' to {success_count}/{len(users)} users",
-                level='SUCCESS'
+                f"Sent '{email_obj.subject}' to {success_count}/{total_emails} users",
+                level=messages.SUCCESS
             )
-        
-        # Close the connection
-        connection.close()
-        
+
+        # Close connection
+        try:
+            connection.close()
+        except Exception:
+            pass
+
         self.message_user(
             request,
             f"Total: Sent {total_sent} emails out of {total_emails} recipients",
-            level='INFO'
+            level=messages.INFO
         )
     
     send_emails.short_description = "Send selected emails to all users"
