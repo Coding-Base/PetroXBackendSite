@@ -107,4 +107,41 @@ class Material(models.Model):
 
     @property
     def file_url(self):
-        return self.file.url if self.file else ''
+        """
+        Defensive accessor that handles:
+        - FieldFile-like objects (have .url)
+        - Plain strings (e.g. stored URL or path)
+        Returns a sensible URL/path string, or '' if none.
+        """
+        f = getattr(self, "file", None)
+        if not f:
+            return ""
+
+        # FieldFile-like object (normal FileField)
+        if hasattr(f, "url"):
+            try:
+                return f.url
+            except Exception:
+                # fallback to name if storage fails
+                name = getattr(f, "name", "")
+                if name:
+                    media_url = getattr(settings, "MEDIA_URL", "")
+                    if media_url and not (name.startswith("http://") or name.startswith("https://") or name.startswith("//")):
+                        return media_url + name.lstrip("/")
+                    return name
+                return ""
+
+        # Plain string saved into the field or assigned incorrectly
+        if isinstance(f, str):
+            # If it's already an absolute URL, return it
+            if f.startswith("http://") or f.startswith("https://") or f.startswith("//"):
+                return f
+            # Otherwise, prefix MEDIA_URL if present
+            media_url = getattr(settings, "MEDIA_URL", "")
+            if media_url:
+                return media_url + f.lstrip("/")
+            return f
+
+        return ""
+
+
