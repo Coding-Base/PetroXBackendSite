@@ -17,34 +17,27 @@ import cloudinary.uploader
 
 
 class MaterialUploadView(generics.CreateAPIView):
-    queryset = Material.objects.all()
     serializer_class = MaterialSerializer
+    permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
         uploaded_file = self.request.FILES.get("file")
-
         if not uploaded_file:
-            raise ValueError("No file provided")
+            raise ValidationError({"file": "No file provided"})
 
-        # Upload to Cloudinary as PUBLIC
+        # Upload to Cloudinary (force public)
         upload_result = cloudinary.uploader.upload(
             uploaded_file,
-            resource_type="raw",   # needed for PDFs/docs
+            resource_type="raw",
             folder="materials",
-            type="upload"          # makes it PUBLIC
+            type="upload"
         )
 
-        # Save Material with Cloudinary URL
+        # Save only the public URL
         serializer.save(
             uploaded_by=self.request.user,
             file=upload_result["secure_url"]
         )
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
 class MaterialDownloadView(RetrieveAPIView):
     queryset = Material.objects.all()
     serializer_class = MaterialSerializer
@@ -69,6 +62,7 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
 
 
 
