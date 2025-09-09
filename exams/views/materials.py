@@ -65,11 +65,19 @@ class MaterialUploadView(generics.CreateAPIView):
 class MaterialDownloadView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Material.objects.all()
-    
+
     def retrieve(self, request, *args, **kwargs):
         material = self.get_object()
-        return Response({'download_url': material.file_url})
-
+        try:
+            download_url = get_cloudinary_signed_or_public_url(material)
+            if not download_url:
+                return Response({'detail': 'Download URL not available'}, status=status.HTTP_404_NOT_FOUND)
+            # Return the (possibly signed) URL as JSON so the front-end can open it
+            return Response({'download_url': download_url}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception("Error generating download URL")
+            return Response({'detail': 'Failed to generate download URL'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
 class MaterialSearchView(generics.ListAPIView):
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
@@ -84,3 +92,4 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
