@@ -7,22 +7,21 @@ class EmailMessage(models.Model):
     subject = models.CharField(max_length=255)
     content = models.TextField(help_text="HTML content for the email body")
     button_text = models.CharField(
-        max_length=50, 
-        blank=True, 
+        max_length=50,
+        blank=True,
         null=True,
         help_text="Text for the action button (optional)"
     )
     button_link = models.URLField(
-        blank=True, 
+        blank=True,
         null=True,
         help_text="URL for the action button (optional)"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(blank=True, null=True)
-    
+
     def __str__(self):
         return self.subject
-
 
 
 class Course(models.Model):
@@ -32,6 +31,7 @@ class Course(models.Model):
 
     def __str__(self):
         return self.name
+
 
 class Question(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='questions')
@@ -64,9 +64,10 @@ class Question(models.Model):
         null=True,
         blank=True
     )
-    
+
     def __str__(self):
         return self.question_text[:50]
+
 
 class TestSession(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -77,9 +78,10 @@ class TestSession(models.Model):
     end_time = models.DateTimeField(null=True, blank=True)
     duration = models.PositiveIntegerField()  # in seconds
     score = models.PositiveIntegerField(null=True, blank=True)
-    
+
     def __str__(self):
         return f"{self.user.username} - {self.course.name}"
+
 
 class GroupTest(models.Model):
     name = models.CharField(max_length=255)
@@ -90,17 +92,19 @@ class GroupTest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     invitees = models.TextField()  # Comma-separated emails
     scheduled_start = models.DateTimeField()
-    
+
     def __str__(self):
         return self.name
+
 
 class Material(models.Model):
     course = models.ForeignKey('Course', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     tags = models.CharField(max_length=255, blank=True)
+    # Use default storage (configured in settings.py as Cloudinary Raw storage).
     file = models.FileField(
         upload_to='materials/',
-        storage='exams.storage_backends.GoogleCloudMediaStorage'  # Use string reference
+        # no explicit storage string here so we use DEFAULT_FILE_STORAGE
     )
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -143,5 +147,3 @@ class Material(models.Model):
             return f
 
         return ""
-
-
