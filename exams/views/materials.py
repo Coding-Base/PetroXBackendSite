@@ -13,57 +13,35 @@ from rest_framework.generics import RetrieveAPIView
 
 logger = logging.getLogger(__name__)
 
+import cloudinary.uploader
+
+
 class MaterialUploadView(generics.CreateAPIView):
+    queryset = Material.objects.all()
     serializer_class = MaterialSerializer
-    permission_classes = [IsAuthenticated]
-    
+
+    def perform_create(self, serializer):
+        material = serializer.save()
+
+        if material.file:
+            # Upload the file to Cloudinary as a PUBLIC asset
+            upload_result = cloudinary.uploader.upload(
+                material.file,
+                resource_type="raw",   # required for PDFs/docs
+                folder="materials",
+                type="upload"          # ensures PUBLIC, not authenticated
+            )
+
+            # Store the public URL instead of local file path
+            material.file = upload_result["secure_url"]
+            material.save()
+
     def create(self, request, *args, **kwargs):
-        server_time = timezone.now()
-        logger.info(f"Upload request received at: {server_time}")
-        
-        if 'file' not in request.FILES:
-            logger.warning("Upload attempt with no file")
-            return Response({"error": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            # Log request details for debugging
-            logger.info(f"Upload request by user: {request.user.id}")
-            logger.info(f"File: {request.FILES['file'].name}")
-            logger.info(f"Course ID: {request.data.get('course')}")
-            
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            material = serializer.save(uploaded_by=request.user)
-            
-            # Log successful upload
-            logger.info(f"Material uploaded successfully: {material.id}")
-            
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
-        # Exception handling updated to use APIException
-        except PermissionError as e:
-            logger.error(f"GCS authentication error: {str(e)}")
-            return Response({
-                "error": "storage_authentication_failed",
-                "message": "Storage authentication failed. Please contact support."
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
-        except RuntimeError as e:
-            logger.error(f"GCS upload error: {str(e)}")
-            return Response({
-                "error": "upload_failed",
-                "message": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        except Exception as e:
-            # Handle all other exceptions, including storage service issues
-            logger.exception("Unexpected upload error")
-            
-            # Create a proper 503 Service Unavailable response
-            return Response({
-                "error": "storage_unavailable",
-                "message": "Storage service is currently unavailable. Please try again later."
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 
@@ -91,6 +69,7 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
 
 
 
