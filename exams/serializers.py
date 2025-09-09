@@ -12,29 +12,9 @@ class MaterialSerializer(serializers.ModelSerializer):
         model = Material
         fields = ['id', 'name', 'tags', 'file', 'file_url', 'course', 'uploaded_by', 'uploaded_at']
         read_only_fields = ['uploaded_by', 'uploaded_at', 'file_url']
-        extra_kwargs = {
-            'file': {'write_only': True},
-        }
 
     def get_file_url(self, obj):
-        return obj.file_url
-
-    def create(self, validated_data):
-        # The user is now handled in the view, so we don't need to pop it here
-        uploaded_file = validated_data.pop('file', None)
-
-        # Create material instance without file first
-        material = Material.objects.create(**validated_data)
-
-        if uploaded_file:
-            # Assign file and save through storage (now Cloudinary via DEFAULT_FILE_STORAGE)
-            material.file.save(
-                uploaded_file.name,
-                uploaded_file,
-                save=True
-            )
-
-        return material
+        return obj.file
 
 class GroupTestSerializer(serializers.ModelSerializer):
     class Meta:
@@ -91,3 +71,4 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
         model = Question
         fields = ['id', 'status', 'question_text']
         read_only_fields = ['id', 'question_text']
+
