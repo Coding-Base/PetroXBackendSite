@@ -102,10 +102,8 @@ class Material(models.Model):
     name = models.CharField(max_length=255)
     tags = models.CharField(max_length=255, blank=True)
     # Use default storage (configured in settings.py as Cloudinary Raw storage).
-    file = models.FileField(
-        upload_to='materials/',
-        # no explicit storage string here so we use DEFAULT_FILE_STORAGE
-    )
+    file = models.URLField(max_length=500)  # store Cloudinary URL directly
+
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -147,3 +145,4 @@ class Material(models.Model):
             return f
 
         return ""
+
