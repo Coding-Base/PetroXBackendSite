@@ -21,30 +21,30 @@ class MaterialUploadView(generics.CreateAPIView):
     serializer_class = MaterialSerializer
 
     def perform_create(self, serializer):
-        material = serializer.save(uploaded_by=self.request.user)
+        uploaded_file = self.request.FILES.get("file")
 
-        if material.file:
-            # Upload the file to Cloudinary as a PUBLIC asset
-            upload_result = cloudinary.uploader.upload(
-                material.file,
-                resource_type="raw",   # required for PDFs/docs
-                folder="materials",
-                type="upload"          # ensures PUBLIC, not authenticated
-            )
+        if not uploaded_file:
+            raise ValueError("No file provided")
 
-            # Store the public URL instead of local file path
-            material.file = upload_result["secure_url"]
-            material.save()
+        # Upload to Cloudinary as PUBLIC
+        upload_result = cloudinary.uploader.upload(
+            uploaded_file,
+            resource_type="raw",   # needed for PDFs/docs
+            folder="materials",
+            type="upload"          # makes it PUBLIC
+        )
+
+        # Save Material with Cloudinary URL
+        serializer.save(
+            uploaded_by=self.request.user,
+            file=upload_result["secure_url"]
+        )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
-
-
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 class MaterialDownloadView(RetrieveAPIView):
     queryset = Material.objects.all()
     serializer_class = MaterialSerializer
@@ -69,6 +69,7 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
 
 
 
