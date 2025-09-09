@@ -21,7 +21,7 @@ class MaterialUploadView(generics.CreateAPIView):
     serializer_class = MaterialSerializer
 
     def perform_create(self, serializer):
-        material = serializer.save()
+        material = serializer.save(uploaded_by=self.request.user)
 
         if material.file:
             # Upload the file to Cloudinary as a PUBLIC asset
@@ -69,6 +69,7 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
 
 
 
