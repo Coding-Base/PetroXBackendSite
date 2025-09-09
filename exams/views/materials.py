@@ -63,21 +63,17 @@ class MaterialUploadView(generics.CreateAPIView):
                 "message": "Storage service is currently unavailable. Please try again later."
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-class MaterialDownloadView(generics.RetrieveAPIView):
-    permission_classes = [IsAuthenticated]
+
+
+class MaterialDownloadView(RetrieveAPIView):
     queryset = Material.objects.all()
+    serializer_class = MaterialSerializer
 
     def retrieve(self, request, *args, **kwargs):
         material = self.get_object()
-        try:
-            download_url = get_cloudinary_signed_or_public_url(material)
-            if not download_url:
-                return Response({'detail': 'Download URL not available'}, status=status.HTTP_404_NOT_FOUND)
-            # Return the (possibly signed) URL as JSON so the front-end can open it
-            return Response({'download_url': download_url}, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.exception("Error generating download URL")
-            return Response({'detail': 'Failed to generate download URL'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        download_url = get_cloudinary_signed_or_public_url(material)
+        return Response({"download_url": download_url})
+
             
 class MaterialSearchView(generics.ListAPIView):
     serializer_class = MaterialSerializer
@@ -93,5 +89,6 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
 
 
