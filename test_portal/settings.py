@@ -42,8 +42,11 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'channels',
-    'storages',
+    'storages',                # keep if you still use django-storages elsewhere
     'exams',
+    # Cloudinary Django integration
+    'cloudinary',
+    'cloudinary_storage',
 ]
 
 # --------------------------
@@ -165,7 +168,24 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Google Cloud credentials from Render
+# ---------------------------
+# Cloudinary configuration
+# ---------------------------
+# You can set either individual vars below OR a single CLOUDINARY_URL env var
+# CLOUDINARY_URL example: cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+CLOUDINARY_STORAGE = {
+    "CLOUD_NAME": os.getenv("CLOUDINARY_CLOUD_NAME", ""),
+    "API_KEY": os.getenv("CLOUDINARY_API_KEY", ""),
+    "API_SECRET": os.getenv("CLOUDINARY_API_SECRET", ""),
+    # 'RESOURCE_TYPE': 'auto'  # default is 'auto'; for raw files Cloudinary will store as raw
+}
+
+# Use RawMediaCloudinaryStorage so PDFs / documents are uploaded as raw resources
+DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.RawMediaCloudinaryStorage"
+# If you prefer images as default, change to:
+# DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+
+# Google Cloud credentials from Render (keep if you still use GCS elsewhere)
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # Default primary key field type
@@ -229,5 +249,3 @@ LOGGING = {
         },
     },
 }
-
-
