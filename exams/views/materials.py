@@ -7,6 +7,7 @@ from django.utils import timezone
 import logging
 from ..models import Material
 from ..serializers import MaterialSerializer
+from exams.cloudinary_utils import get_cloudinary_signed_or_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -92,4 +93,5 @@ class MaterialSearchView(generics.ListAPIView):
             models.Q(tags__icontains=query) |
             models.Q(course__name__icontains=query)
         )
+
 
