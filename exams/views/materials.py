@@ -8,6 +8,7 @@ from django.utils import timezone
 import cloudinary.uploader
 from rest_framework import generics, status
 from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.generics import RetrieveAPIView, ListAPIView, CreateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
@@ -170,3 +171,4 @@ class MaterialSearchView(ListAPIView):
             models.Q(tags__icontains=q) |
             models.Q(course__name__icontains=q)
         )
+
