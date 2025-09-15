@@ -3,19 +3,23 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.generics import RetrieveAPIView
+from django.conf import settings
 import logging
+import cloudinary.uploader
+
 from ..models import Material
 from ..serializers import MaterialSerializer
-from . import cloudinary_utils as cloud_utils  # local import to avoid circular issues
-from rest_framework.generics import RetrieveAPIView
-
-import cloudinary.uploader
-from django.conf import settings
+from .. import cloudinary_utils as cloud_utils  # correct relative import (module lives at exams/cloudinary_utils.py)
 
 logger = logging.getLogger(__name__)
 
 
 class MaterialUploadView(generics.CreateAPIView):
+    """
+    Uploads an incoming file to Cloudinary (raw resource) with public type,
+    then saves the returned secure_url into the Material.file URL field.
+    """
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
 
@@ -24,37 +28,42 @@ class MaterialUploadView(generics.CreateAPIView):
         if not uploaded_file:
             raise ValidationError({"file": "No file provided"})
 
-        # enforce a maximum size before sending to Cloudinary (use settings or 10MB default)
-        max_bytes = getattr(settings, "CLOUDINARY_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
+        # Optional: enforce a maximum file size server-side (match frontend limit)
+        max_bytes = int(getattr(settings, "MAX_UPLOAD_BYTES", 20 * 1024 * 1024))  # default 20MB
         if uploaded_file.size > max_bytes:
-            raise ValidationError({"file": f"File too large. Max allowed {max_bytes} bytes."})
+            raise ValidationError({"file": f"File size exceeds limit ({max_bytes} bytes)."})
 
         try:
-            # Upload to Cloudinary as raw (pdf/doc) and force public upload
+            # Upload to Cloudinary as a raw/public resource
             upload_result = cloudinary.uploader.upload(
                 uploaded_file,
-                resource_type="raw",
+                resource_type="raw",  # required for pdf/doc
                 folder="materials",
-                type="upload"  # ensures public, not authenticated
+                type="upload",        # ensures public (not authenticated)
+                use_filename=True,
+                unique_filename=True,
+                overwrite=False,
+                # you can control timeout or other options here if needed
             )
         except Exception as e:
             logger.exception("Cloudinary upload failed")
-            raise APIException(f"Failed to upload file to storage: {str(e)}")
+            # Wrap for DRF to return 500 with message
+            raise APIException({"detail": "Storage upload failed", "error": str(e)})
 
-        # The upload_result should include 'secure_url' — save that URL into the model
-        secure_url = upload_result.get("secure_url") or upload_result.get("url")
-        if not secure_url:
-            logger.error("Cloudinary returned no secure URL: %s", upload_result)
-            raise APIException("Storage upload did not return a usable URL")
+        # Get a usable URL from upload result (secure_url preferred)
+        file_url = upload_result.get("secure_url") or upload_result.get("url")
+        if not file_url:
+            logger.error("Cloudinary upload returned no URL: %s", upload_result)
+            raise APIException("Upload succeeded but storage returned no URL")
 
-        # Save the object with the public URL
-        serializer.save(
-            uploaded_by=self.request.user,
-            file=secure_url
-        )
+        # Save the material with uploaded_by and file URL
+        serializer.save(uploaded_by=self.request.user, file=file_url)
 
 
 class MaterialDownloadView(RetrieveAPIView):
+    """
+    Returns a JSON with { "download_url": "<public or signed url>" } for the requested material id.
+    """
     queryset = Material.objects.all()
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
@@ -63,12 +72,11 @@ class MaterialDownloadView(RetrieveAPIView):
         material = self.get_object()
         try:
             download_url = cloud_utils.get_cloudinary_signed_or_public_url(material)
-        except APIException as e:
-            logger.exception("Error generating download URL")
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.exception("Unexpected error generating download URL")
+            logger.exception("Error generating download URL for material id=%s", getattr(material, "id", None))
             return Response({"detail": "Failed to generate download URL"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({"download_url": download_url})
+        if not download_url:
+            return Response({"detail": "No download URL available"}, status=status.HTTP_404_NOT_FOUND)
 
+        return Response({"download_url": download_url}, status=status.HTTP_200_OK)
