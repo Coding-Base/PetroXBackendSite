@@ -54,7 +54,8 @@ class MaterialUploadView(generics.CreateAPIView):
     def perform_create(self, serializer):
         request = self.request
 
-        uploaded_file = request.FILES.get("file")
+        # Get the file from serializer validated data
+        uploaded_file = serializer.validated_data.get("file")
         if not uploaded_file:
             raise ValidationError({"file": "No file provided"})
 
@@ -84,22 +85,23 @@ class MaterialUploadView(generics.CreateAPIView):
             logger.error("No URL returned from Cloudinary upload_result=%s", upload_result)
             raise APIException(detail="Upload succeeded but no file URL was returned by storage provider.")
 
-        # Defensive truncation to match DB field lengths (avoids DataError)
-        # We inspect serializer.validated_data here for fields that map to model columns.
-        validated = serializer.validated_data.copy()
+        # Remove the file from validated_data as we'll use the URL instead
+        validated_data = serializer.validated_data.copy()
+        validated_data.pop('file', None)
 
+        # Defensive truncation to match DB field lengths (avoids DataError)
         # Truncate 'name' and 'tags' if they exceed DB column lengths
-        if "name" in validated:
-            truncated_name, truncated = _truncate_field_if_needed(Material, "name", validated["name"])
+        if "name" in validated_data:
+            truncated_name, truncated = _truncate_field_if_needed(Material, "name", validated_data["name"])
             if truncated:
                 logger.warning("Truncated material name to fit DB column length.")
-                validated["name"] = truncated_name
+                validated_data["name"] = truncated_name
 
-        if "tags" in validated:
-            truncated_tags, truncated = _truncate_field_if_needed(Material, "tags", validated.get("tags"))
+        if "tags" in validated_data:
+            truncated_tags, truncated = _truncate_field_if_needed(Material, "tags", validated_data.get("tags"))
             if truncated:
                 logger.warning("Truncated material tags to fit DB column length.")
-                validated["tags"] = truncated_tags
+                validated_data["tags"] = truncated_tags
 
         # Save in a transaction to get atomic behavior
         try:
@@ -108,7 +110,7 @@ class MaterialUploadView(generics.CreateAPIView):
                 serializer.save(
                     uploaded_by=request.user,
                     file=file_url,
-                    **validated
+                    **validated_data
                 )
         except DataError as e:
             # Database-level data issues (e.g., string too long)
@@ -171,4 +173,3 @@ class MaterialSearchView(ListAPIView):
             models.Q(tags__icontains=q) |
             models.Q(course__name__icontains=q)
         )
-
