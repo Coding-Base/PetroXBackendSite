@@ -1,9 +1,10 @@
+# exams/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Course, Question, TestSession, GroupTest, Material
-# removed google.cloud import
 import uuid
 from django.conf import settings
+
 
 class MaterialSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
@@ -15,6 +16,7 @@ class MaterialSerializer(serializers.ModelSerializer):
 
     def get_file_url(self, obj):
         return obj.file
+
 
 class GroupTestSerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,20 +32,24 @@ class GroupTestSerializer(serializers.ModelSerializer):
             'scheduled_start',
         ]
 
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email']
+
 
 class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = '__all__'
 
+
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = '__all__'
+
 
 class TestSessionSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
@@ -51,10 +57,11 @@ class TestSessionSerializer(serializers.ModelSerializer):
         model = TestSession
         fields = ['id', 'user', 'course', 'questions', 'start_time', 'end_time', 'score', 'duration', 'question_count']
 
-# New serializer for preview endpoint
+
 class PreviewPassQuestionsSerializer(serializers.Serializer):
     file = serializers.FileField()
     question_type = serializers.ChoiceField(choices=[('multichoice', 'Multiple Choice')])
+
 
 class BulkQuestionSerializer(serializers.Serializer):
     file = serializers.FileField()
@@ -66,9 +73,9 @@ class BulkQuestionSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid course ID")
         return value
 
+
 class QuestionStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'status', 'question_text']
         read_only_fields = ['id', 'question_text']
-
