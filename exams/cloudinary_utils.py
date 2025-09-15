@@ -1,29 +1,69 @@
-import cloudinary
-import cloudinary.utils
-import time
+# exams/cloudinary_utils.py
+import os
+import re
+from django.conf import settings
+from rest_framework.exceptions import APIException
 
-def get_cloudinary_signed_or_public_url(material, expires_in=3600):
+try:
+    import cloudinary
+    import cloudinary.utils
+except Exception:
+    cloudinary = None  # ok — we'll still handle string URLs
+
+
+def get_cloudinary_signed_or_public_url(material):
     """
-    Generate a signed Cloudinary URL if file is private.
-    Returns direct public URL if file is public.
+    Given a Material instance, return a safe public URL for download.
+    Handles:
+      - material.file as an absolute URL string (preferred)
+      - legacy FieldFile-like (has .url)
+      - fallback: build a naive cloudinary raw upload URL if we can find the cloud name
     """
-    if not material.file:
-        return None
+    f = getattr(material, "file", None)
+    if not f:
+        raise APIException("No file found for this material")
 
-    # Cloudinary stores full path in file.name (e.g., media/materials/file.pdf)
-    # Remove the storage prefix to get the public_id
-    public_id = material.file.name.replace("media/", "").replace("materials/", "").split(".")[0]
+    # If it's a FieldFile-like object with .url, prefer that
+    if hasattr(f, "url"):
+        try:
+            url = f.url
+            if url:
+                return url
+        except Exception:
+            # continue to next attempts
+            pass
 
-    try:
-        # Signed URL valid for `expires_in` seconds
-        signed_url, _ = cloudinary.utils.cloudinary_url(
-            public_id,
-            resource_type="raw",          # needed for pdf/doc
-            type="authenticated",         # ensure signed delivery
-            sign_url=True,
-            expires_at=int(time.time()) + expires_in
-        )
-        return signed_url
-    except Exception:
-        # fallback: plain file url (works if file is public)
-        return material.file.url
+        # try to get a file name and fall back
+        name = getattr(f, "name", None)
+        if isinstance(name, str):
+            f = name  # continue treating as string
+
+    # If it's a plain string URL, return it directly if absolute
+    if isinstance(f, str):
+        if f.startswith("http://") or f.startswith("https://") or f.startswith("//"):
+            return f
+
+        # Otherwise try to build a Cloudinary raw upload public URL
+        # Use cloud name from settings or env
+        cloud_name = None
+        # Try a few places for the cloud name
+        c_cfg = getattr(settings, "CLOUDINARY", None)
+        if c_cfg and isinstance(c_cfg, dict):
+            cloud_name = c_cfg.get("cloud_name") or c_cfg.get("CLOUDINARY_CLOUD_NAME")
+        if not cloud_name:
+            cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME") or os.environ.get("CLOUD_NAME") or os.environ.get("CLOUDINARY_CLOUDNAME")
+
+        if not cloud_name:
+            # If we can't construct a cloudinary URL, return a helpful error
+            raise APIException("Material file is not an absolute URL and Cloudinary cloud name is not configured.")
+
+        # sanitize and remove leading media/ or slashes
+        public_path = f.lstrip("/").replace("media/", "").replace("media/media/", "")
+        # If there is a version prefix like v123/ keep it — we don't attempt to invent one
+        # Build a conservative public URL (raw/upload)
+        # Note: Cloudinary sometimes requires the version segment; if the original secure_url had it, we would have returned that above.
+        built = f"https://res.cloudinary.com/{cloud_name}/raw/upload/{public_path}"
+        return built
+
+    # Not a string or url-like file
+    raise APIException("Unable to determine download URL for the requested material")
