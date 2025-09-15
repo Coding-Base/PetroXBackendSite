@@ -1,3 +1,4 @@
+# exams/models.py
 from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -101,8 +102,9 @@ class Material(models.Model):
     course = models.ForeignKey('Course', on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     tags = models.CharField(max_length=255, blank=True)
-    # Use default storage (configured in settings.py as Cloudinary Raw storage).
-    file = models.URLField(max_length=500)  # store Cloudinary URL directly
+
+    # store Cloudinary (public) URL directly
+    file = models.URLField(max_length=1000, blank=True)
 
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -110,39 +112,17 @@ class Material(models.Model):
     @property
     def file_url(self):
         """
-        Defensive accessor that handles:
-        - FieldFile-like objects (have .url)
-        - Plain strings (e.g. stored URL or path)
-        Returns a sensible URL/path string, or '' if none.
+        Return a safe URL for the frontend:
+        - if file is an absolute URL string -> return it
+        - otherwise return '' (we don't attempt to read FieldFile from storage here)
         """
         f = getattr(self, "file", None)
         if not f:
             return ""
-
-        # FieldFile-like object (normal FileField)
-        if hasattr(f, "url"):
-            try:
-                return f.url
-            except Exception:
-                # fallback to name if storage fails
-                name = getattr(f, "name", "")
-                if name:
-                    media_url = getattr(settings, "MEDIA_URL", "")
-                    if media_url and not (name.startswith("http://") or name.startswith("https://") or name.startswith("//")):
-                        return media_url + name.lstrip("/")
-                    return name
-                return ""
-
-        # Plain string saved into the field or assigned incorrectly
         if isinstance(f, str):
-            # If it's already an absolute URL, return it
-            if f.startswith("http://") or f.startswith("https://") or f.startswith("//"):
-                return f
-            # Otherwise, prefix MEDIA_URL if present
-            media_url = getattr(settings, "MEDIA_URL", "")
-            if media_url:
-                return media_url + f.lstrip("/")
             return f
-
-        return ""
-
+        # defensive fallback
+        try:
+            return f.url
+        except Exception:
+            return ""
