@@ -7,6 +7,7 @@ from django.conf import settings
 
 
 class MaterialSerializer(serializers.ModelSerializer):
+    file = serializers.FileField(write_only=True)  # Add this field for file upload
     file_url = serializers.SerializerMethodField()
 
     class Meta:
