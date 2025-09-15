@@ -179,7 +179,10 @@ CLOUDINARY_STORAGE = {
     "API_SECRET": os.getenv("CLOUDINARY_API_SECRET", ""),
     # 'RESOURCE_TYPE': 'auto'  # default is 'auto'; for raw files Cloudinary will store as raw
 }
-
+CLOUDINARY_MAX_UPLOAD_BYTES = int(os.getenv("CLOUDINARY_MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
+CLOUDINARY = {
+    "cloud_name": CLOUDINARY_STORAGE.get("CLOUD_NAME", "") or os.getenv("CLOUDINARY_CLOUD_NAME", ""),
+}
 # Use RawMediaCloudinaryStorage so PDFs / documents are uploaded as raw resources
 DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.RawMediaCloudinaryStorage"
 # If you prefer images as default, change to:
@@ -249,3 +252,4 @@ LOGGING = {
         },
     },
 }
+
