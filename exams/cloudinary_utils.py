@@ -1,69 +1,75 @@
 # exams/cloudinary_utils.py
 import os
-import re
+import logging
+import urllib.parse
 from django.conf import settings
-from rest_framework.exceptions import APIException
 
-try:
-    import cloudinary
-    import cloudinary.utils
-except Exception:
-    cloudinary = None  # ok — we'll still handle string URLs
-
+logger = logging.getLogger(__name__)
 
 def get_cloudinary_signed_or_public_url(material):
     """
-    Given a Material instance, return a safe public URL for download.
-    Handles:
-      - material.file as an absolute URL string (preferred)
-      - legacy FieldFile-like (has .url)
-      - fallback: build a naive cloudinary raw upload URL if we can find the cloud name
+    Return a usable public download URL for the given Material instance.
+    Accepts Material.file as either:
+      - absolute URL string (https://...)
+      - relative path string (media/... or media/media/...)
+      - FieldFile-like object (has .url or .name)
+    If CLOUDINARY_CLOUD_NAME is configured, construct a res.cloudinary.com/raw/upload/<path> URL
+    for relative paths so downloads are public.
     """
     f = getattr(material, "file", None)
     if not f:
-        raise APIException("No file found for this material")
+        return ""
 
-    # If it's a FieldFile-like object with .url, prefer that
-    if hasattr(f, "url"):
-        try:
+    # If FieldFile-like: prefer .url then .name
+    url = None
+    try:
+        if hasattr(f, "url"):
             url = f.url
-            if url:
-                return url
-        except Exception:
-            # continue to next attempts
-            pass
+    except Exception:
+        # accessing FieldFile.url may raise if storage needs credentials — fallback below
+        url = None
 
-        # try to get a file name and fall back
-        name = getattr(f, "name", None)
-        if isinstance(name, str):
-            f = name  # continue treating as string
+    if not url:
+        # If f is a string, use it
+        if isinstance(f, str):
+            url = f
+        else:
+            # try name attribute (FieldFile.name)
+            name = getattr(f, "name", None)
+            if name:
+                url = name
 
-    # If it's a plain string URL, return it directly if absolute
-    if isinstance(f, str):
-        if f.startswith("http://") or f.startswith("https://") or f.startswith("//"):
-            return f
+    if not url:
+        return ""
 
-        # Otherwise try to build a Cloudinary raw upload public URL
-        # Use cloud name from settings or env
-        cloud_name = None
-        # Try a few places for the cloud name
-        c_cfg = getattr(settings, "CLOUDINARY", None)
-        if c_cfg and isinstance(c_cfg, dict):
-            cloud_name = c_cfg.get("cloud_name") or c_cfg.get("CLOUDINARY_CLOUD_NAME")
-        if not cloud_name:
-            cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME") or os.environ.get("CLOUD_NAME") or os.environ.get("CLOUDINARY_CLOUDNAME")
+    url = str(url).strip()
 
-        if not cloud_name:
-            # If we can't construct a cloudinary URL, return a helpful error
-            raise APIException("Material file is not an absolute URL and Cloudinary cloud name is not configured.")
+    # If already an absolute URL, return it (assume public)
+    if url.startswith("http://") or url.startswith("https://") or url.startswith("//"):
+        return url
 
-        # sanitize and remove leading media/ or slashes
-        public_path = f.lstrip("/").replace("media/", "").replace("media/media/", "")
-        # If there is a version prefix like v123/ keep it — we don't attempt to invent one
-        # Build a conservative public URL (raw/upload)
-        # Note: Cloudinary sometimes requires the version segment; if the original secure_url had it, we would have returned that above.
-        built = f"https://res.cloudinary.com/{cloud_name}/raw/upload/{public_path}"
-        return built
+    # It's a relative path — try to construct a public Cloudinary URL:
+    # remove leading slashes and "media/" prefix if present
+    cleaned = url.lstrip("/")
+    cleaned = cleaned.replace("media/", "").replace("media/media/", "")
 
-    # Not a string or url-like file
-    raise APIException("Unable to determine download URL for the requested material")
+    cloud_name = None
+    cfg = getattr(settings, "CLOUDINARY_STORAGE", None)
+    if cfg and isinstance(cfg, dict):
+        cloud_name = cfg.get("CLOUD_NAME")
+    if not cloud_name:
+        cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME") or os.environ.get("CLOUD_NAME")
+
+    if cloud_name:
+        # Cloudinary requires proper URL-encoding for filenames/paths
+        encoded = urllib.parse.quote(cleaned, safe="/")
+        public_url = f"https://res.cloudinary.com/{cloud_name}/raw/upload/{encoded}"
+        return public_url
+
+    # Fallback to MEDIA_URL + cleaned (may be non-public)
+    media_url = getattr(settings, "MEDIA_URL", "")
+    if media_url and not cleaned.startswith("http"):
+        return media_url.rstrip("/") + "/" + cleaned.lstrip("/")
+
+    # Last resort, return cleaned path
+    return cleaned
