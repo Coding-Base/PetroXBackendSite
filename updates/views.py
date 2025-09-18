@@ -1,4 +1,5 @@
 # updates/views.py
+import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import IntegrityError
@@ -10,6 +11,8 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 
 from .models import Update, Comment, Like, UpdateReadState
 from .serializers import UpdateSerializer, CommentSerializer, LikeSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class IsAdminOrReadOnly(permissions.BasePermission):
@@ -25,23 +28,67 @@ class IsAdminOrReadOnly(permissions.BasePermission):
 class UpdateViewSet(viewsets.ModelViewSet):
     """
     CRUD for Update (announcements/blogs). Non-staff users can read only.
-    Provides extra actions:
-      - POST /api/updates/{slug}/like/
-      - POST /api/updates/{slug}/unlike/
-      - GET  /api/updates/{slug}/like_status/
-      - GET  /api/updates/unread_count/
-      - POST /api/updates/mark_all_read/
+    Provides extra actions and temporarily force-cors for debugging.
     """
     queryset = Update.objects.filter(published=True).order_by('-created_at')
     serializer_class = UpdateSerializer
     permission_classes = [IsAdminOrReadOnly]
     lookup_field = 'slug'
 
+    # ---------- Helper: the origin to allow (temporary) ----------
+    # Use the exact frontend origin you serve from
+    FRONTEND_ORIGIN = "https://petrox-test-frontend.onrender.com"
+
+    # ---------- Overriding OPTIONS to ensure preflight response is correct ----------
+    def options(self, request, *args, **kwargs):
+        """
+        Ensure OPTIONS replies include the Access-Control headers the browser expects.
+        This is a temporary debugging aid; normally django-cors-headers handles this.
+        """
+        response = super().options(request, *args, **kwargs)
+        response['Access-Control-Allow-Origin'] = self.FRONTEND_ORIGIN
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'authorization, content-type, x-upload-timeout'
+        # If you use cookies, set to 'true' and set CORS_ALLOW_CREDENTIALS accordingly.
+        response['Access-Control-Allow-Credentials'] = 'false'
+        response['Access-Control-Max-Age'] = '86400'
+        return response
+
+    # ---------- Ensure list() sets CORS headers and logs arrival ----------
+    def list(self, request, *args, **kwargs):
+        """
+        Override list to log and add response headers to prevent shared caches
+        and ensure the browser accepts the response.
+        """
+        logger.debug("UpdateViewSet.list called by %s (origin: %s)", request.META.get('REMOTE_ADDR'), request.META.get('HTTP_ORIGIN'))
+        response = super().list(request, *args, **kwargs)
+
+        # Disable caching for the updates feed
+        response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
+
+        # Force the Access-Control headers (temporary)
+        response['Access-Control-Allow-Origin'] = self.FRONTEND_ORIGIN
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'authorization, content-type, x-upload-timeout'
+        response['Access-Control-Allow-Credentials'] = 'false'
+
+        return response
+
+    # ---------- A safety net: ensure final response includes CORS if missing ----------
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if 'Access-Control-Allow-Origin' not in response:
+            response['Access-Control-Allow-Origin'] = self.FRONTEND_ORIGIN
+            response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'authorization, content-type, x-upload-timeout'
+            response['Access-Control-Allow-Credentials'] = 'false'
+        return response
+
+    # ---------- Existing actions (like/unlike/etc) kept intact ----------
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def like(self, request, slug=None):
-        """
-        Like an update. Idempotent in effect: returns 400 if already liked.
-        """
         update = self.get_object()
         try:
             like, created = Like.objects.get_or_create(user=request.user, update=update)
@@ -49,35 +96,22 @@ class UpdateViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'already liked'}, status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError:
             return Response({'detail': 'already liked'}, status=status.HTTP_400_BAD_REQUEST)
-
         return Response({'status': 'liked', 'like_id': like.id}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def unlike(self, request, slug=None):
-        """
-        Unlike an update. Always returns success even if there was no previous like.
-        """
         update = self.get_object()
         Like.objects.filter(user=request.user, update=update).delete()
         return Response({'status': 'unliked'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
     def like_status(self, request, slug=None):
-        """
-        Return whether the current user has liked this update.
-        GET /api/updates/{slug}/like_status/ -> { "liked": true|false }
-        """
         update = self.get_object()
         liked = Like.objects.filter(user=request.user, update=update).exists()
         return Response({'liked': liked}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def unread_count(self, request):
-        """
-        Return count of unread updates for the current user.
-        This implementation uses UpdateReadState entries (one per user+update).
-        Consider switching to last_viewed_at on user profile for better scale.
-        """
         unread = Update.objects.filter(published=True).exclude(
             id__in=UpdateReadState.objects.filter(user=request.user, viewed=True).values_list('update_id', flat=True)
         ).count()
@@ -85,9 +119,6 @@ class UpdateViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def mark_all_read(self, request):
-        """
-        Mark all current published updates as read for the current user.
-        """
         user = request.user
         now = timezone.now()
         updates = Update.objects.filter(published=True)
@@ -111,10 +142,8 @@ class CommentViewSet(viewsets.ModelViewSet):
         update_id = self.request.query_params.get('update')
         qs = Comment.objects.select_related('user').all()
         if update_id:
-            # return only root comments (parent is null) and prefetch replies
             return qs.filter(update_id=update_id, parent__isnull=True).prefetch_related('replies')
         return qs
 
     def perform_create(self, serializer):
-        # set the comment author from the authenticated user
         serializer.save(user=self.request.user)
