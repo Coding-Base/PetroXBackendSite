@@ -87,6 +87,7 @@ CORS_EXPOSE_HEADERS = [
 # Middleware (CorsMiddleware must be early)
 # --------------------------
 MIDDLEWARE = [
+    "core.middleware.force_cors_echo.ForceCORSEchoMiddleware", 
     "corsheaders.middleware.CorsMiddleware",  # Must be at the top!
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -253,5 +254,6 @@ LOGGING = {
         },
     },
 }
+
 
 
