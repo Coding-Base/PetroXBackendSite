@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     # Cloudinary Django integration
     'cloudinary',
     'cloudinary_storage',
+    'updates',
 ]
 
 # --------------------------
@@ -252,4 +253,5 @@ LOGGING = {
         },
     },
 }
+
 
