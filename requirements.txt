@@ -85,4 +85,8 @@ google-auth==2.40.3
 requests==2.32.4
 cloudinary
 django-cloudinary-storage
+django-anymail>=8.1.0
+sendgrid>=6.9.0
+
+
 
