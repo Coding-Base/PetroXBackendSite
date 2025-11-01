@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'cloudinary',
     'cloudinary_storage',
     'updates',
+    'anymail',
 ]
 
 # --------------------------
@@ -273,3 +274,4 @@ LOGGING = {
         },
     },
 }
+
