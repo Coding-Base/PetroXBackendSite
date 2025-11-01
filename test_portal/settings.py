@@ -21,8 +21,8 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 # FIXED: Dynamic allowed hosts with Render support
 allowed_hosts_str = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,petroxtestbackend.onrender.com")
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_str.split(",")]
-EMAIL_BATCH_SIZE = 20        # default is 20
-EMAIL_BATCH_PAUSE = 0.5     # seconds to sleep between batches
+EMAIL_BATCH_SIZE = int(os.getenv("EMAIL_BATCH_SIZE", 20))        # default is 20
+EMAIL_BATCH_PAUSE = float(os.getenv("EMAIL_BATCH_PAUSE", 0.5))  # seconds to sleep between batches
 
 # Automatically add Render's hostname
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'corsheaders',  # Make sure this is above all your own apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'anymail',      # Anymail for SendGrid / transactional email APIs
     'channels',
     'storages',                # keep if you still use django-storages elsewhere
     'exams',
@@ -87,7 +88,7 @@ CORS_EXPOSE_HEADERS = [
 # Middleware (CorsMiddleware must be early)
 # --------------------------
 MIDDLEWARE = [
-    "core.middleware.force_cors_echo.ForceCORSEchoMiddleware", 
+    "core.middleware.force_cors_echo.ForceCORSEchoMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # Must be at the top!
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -210,14 +211,32 @@ if not DEBUG:
 # Ensure this is not set to a restrictive value that breaks requests
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_USE_SSL = False
-EMAIL_HOST_USER = 'thecbsteam8@gmail.com'
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD')
-DEFAULT_FROM_EMAIL = 'Petrox Assessment <thecbsteam8@gmail.com>'
+# ---------------------------
+# EMAIL / SendGrid via Anymail (preferred for Render - uses HTTP API)
+# ---------------------------
+# Toggle use with env var: set USE_SENDGRID=True in Render secrets to enable SendGrid
+USE_SENDGRID = os.getenv("USE_SENDGRID", "True") == "True"
+
+# Default "from" sender (keep as you used)
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Petrox Assessment <thecbsteam8@gmail.com>")
+
+if USE_SENDGRID:
+    # Use django-anymail + SendGrid HTTP API
+    EMAIL_BACKEND = "anymail.backends.sendgrid.EmailBackend"
+    ANYMAIL = {
+        "SENDGRID_API_KEY": os.getenv("SENDGRID_API_KEY", ""),  # set this in Render secrets
+    }
+    # Optional: a short timeout for API calls
+    EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", 10))
+else:
+    # Fallback: SMTP (useful for local dev if you prefer)
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+    EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+    EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
+    EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "thecbsteam8@gmail.com")
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD', "")
 
 # Channels configuration (if using WebSockets)
 CHANNEL_LAYERS = {
@@ -254,6 +273,3 @@ LOGGING = {
         },
     },
 }
-
-
-
