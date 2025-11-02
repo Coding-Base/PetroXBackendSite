@@ -1,22 +1,56 @@
-name: Trigger Petrox email job
+name: Trigger Render one-off email jobs
 
 on:
+  workflow_dispatch:
+    inputs:
+      email_ids:
+        description: 'Comma-separated EmailMessage ids to send (e.g. 123,124). If empty, workflow will exit.'
+        required: true
+        default: ''
+      test_to:
+        description: 'Optional: test email address to send to (single recipient).'
+        required: false
+        default: ''
   schedule:
-    - cron: '0 9 * * *'   # daily at 09:00 UTC — change as needed
-  workflow_dispatch:      # allows manual run from GitHub UI
+    - cron: '0 9 * * *'  # example: run every day at 09:00 UTC (customize or remove)
 
 jobs:
-  trigger-render-job:
+  trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Render one-off job
+      - name: Validate input
+        id: validate
+        run: |
+          if [ -z "${{ github.event.inputs.email_ids }}" ]; then
+            echo "No email_ids provided; exiting."
+            exit 1
+          fi
+          echo "EMAIL_IDS=${{ github.event.inputs.email_ids }}" >> $GITHUB_OUTPUT
+          echo "TEST_TO=${{ github.event.inputs.test_to }}" >> $GITHUB_OUTPUT
+
+      - name: Trigger Render jobs for each id
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: "srv-cujrrlogph6c73bl2t40"
         run: |
-          SERVICE_ID="srv-xxxxxxxxxxxx"   # <-- replace with your service id
-          START_CMD='python manage.py send_emailmessage --id 123 --batch-size 50 --pause 1 --timeout 15'
-          echo "Creating Render one-off job for service $SERVICE_ID"
-          curl -s -X POST "https://api.render.com/v1/services/${SERVICE_ID}/jobs" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"startCommand\": ${START_CMD@Q}}"
+          set -e
+          EMAIL_IDS="${{ steps.validate.outputs.EMAIL_IDS }}"
+          TEST_TO="${{ steps.validate.outputs.TEST_TO }}"
+          IFS=',' read -ra IDS <<< "$EMAIL_IDS"
+          for id in "${IDS[@]}"; do
+            id_trimmed="$(echo "$id" | tr -d '[:space:]')"
+            if [ -z "$id_trimmed" ]; then
+              continue
+            fi
+            if [ -n "$TEST_TO" ]; then
+              START_CMD="python manage.py send_emailmessage --id ${id_trimmed} --test-to ${TEST_TO} --timeout 15"
+            else
+              START_CMD="python manage.py send_emailmessage --id ${id_trimmed} --batch-size 50 --pause 1 --timeout 15"
+            fi
+            echo "Creating job for EmailMessage id=$id_trimmed"
+            resp=$(curl -s -X POST "https://api.render.com/v1/services/${SERVICE_ID}/jobs" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"startCommand\": ${START_CMD@Q}}")
+            echo "Response: $resp"
+          done
