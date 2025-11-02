@@ -17,22 +17,30 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
+# core/management/commands/send_emailmessage.py
+from django.core.management.base import BaseCommand, CommandError
+from exams.tasks import send_emailmessage_task
+
 class Command(BaseCommand):
-    help = "Send an EmailMessage (by id) to all active users in safe batches. Run as a one-off worker."
+    help = "Send an EmailMessage (by id) to all active users in safe batches (wrapper that calls background task)."
 
     def add_arguments(self, parser):
         parser.add_argument('--id', type=int, help='EmailMessage id to send', required=True)
-        parser.add_argument('--batch-size', type=int, default=int(getattr(settings, 'EMAIL_BATCH_SIZE', 20)))
-        parser.add_argument('--pause', type=float, default=float(getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5)))
-        parser.add_argument('--timeout', type=int, default=int(getattr(settings, 'EMAIL_TIMEOUT', 10)))
+        parser.add_argument('--batch-size', type=int, default=None)
+        parser.add_argument('--pause', type=float, default=None)
+        parser.add_argument('--timeout', type=int, default=None)
         parser.add_argument('--test-to', type=str, help='If set, send only to this recipient (useful for quick test)')
 
     def handle(self, *args, **options):
         email_id = options['id']
-        batch_size = max(1, options['batch_size'])
-        pause = options['pause']
-        timeout = options['timeout']
+        batch_size = options.get('batch_size')
+        pause = options.get('pause')
+        timeout = options.get('timeout')
         test_to = options.get('test_to')
+
+        result = send_emailmessage_task(email_id, batch_size=batch_size, pause=pause, timeout=timeout, test_to=test_to)
+        self.stdout.write(str(result))
+
 
         try:
             email_obj = EmailMessage.objects.get(pk=email_id)
