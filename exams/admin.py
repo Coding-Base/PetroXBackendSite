@@ -12,6 +12,8 @@ import time
 from django.core.paginator import Paginator
 import socket
 import ssl
+import requests  # used only for exception class (requests.exceptions.RequestException)
+import gc
 
 logger = logging.getLogger(__name__)
 
@@ -197,62 +199,20 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
     def send_emails(self, request, queryset):
         """
-        Batched email sender with resilient handling.
+        Robust, non-blocking-friendly batched email sender.
 
-        - Uses django-anymail/SendGrid (HTTP) when settings.USE_SENDGRID is True.
-        - Falls back to SMTP if USE_SENDGRID is False.
-        - Sends in batches using settings.EMAIL_BATCH_SIZE and sleeps EMAIL_BATCH_PAUSE between batches.
+        - Uses per-batch connections with per-request timeouts (protects workers from hanging).
+        - Catches and logs errors per-batch so one failure doesn't kill the whole action.
+        - Cleans up memory between batches.
         """
         # Config: batch size and pause
         batch_size = max(1, int(getattr(settings, 'EMAIL_BATCH_SIZE', 20)))
         pause_seconds = float(getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5))
-        email_timeout = int(getattr(settings, 'EMAIL_TIMEOUT', getattr(settings, 'EMAIL_SMTP_TIMEOUT', 20)))
+        # Per-request timeout (seconds) used for HTTP requests to SendGrid via Anymail/requests.
+        email_timeout = int(getattr(settings, 'EMAIL_TIMEOUT', getattr(settings, 'EMAIL_SMTP_TIMEOUT', 10)))
         default_from = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
 
         use_sendgrid = getattr(settings, 'USE_SENDGRID', True)
-
-        # Build connection - for Anymail this will use HTTP API; for SMTP it will use socket
-        try:
-            connection = mail.get_connection(timeout=email_timeout)
-        except TypeError:
-            # older django versions: no timeout arg
-            connection = mail.get_connection()
-
-        # Try to open connection, but be tolerant and show admin-friendly messages
-        try:
-            connection.open()
-        except Exception as e:
-            # Provide helpful guidance depending on configuration
-            logger.exception("Failed to open mail connection: %s", e)
-
-            if use_sendgrid:
-                # If using SendGrid via Anymail, likely cause is API key missing/invalid,
-                # or provider rejected the request — but Anymail usually returns HTTP errors.
-                # Render free-tier SMTP block doesn't apply for API, but network errors may still
-                # occur if API key is wrong or outbound HTTPS restricted.
-                self.message_user(
-                    request,
-                    (
-                        "Failed to open mail connection (SendGrid/Anymail). "
-                        "Check SENDGRID_API_KEY in environment, and check SendGrid dashboard for any blocks. "
-                        f"Error: {e}"
-                    ),
-                    level=messages.ERROR
-                )
-            else:
-                # Using SMTP: often caused by blocked outbound SMTP (e.g. Render free-tier) or wrong host/port.
-                self.message_user(
-                    request,
-                    (
-                        "Failed to open SMTP connection. This is commonly due to outbound SMTP ports "
-                        "being blocked on cloud providers (Render free tier blocks ports 25/465/587) "
-                        "or incorrect SMTP credentials/host. "
-                        f"Error: {e}"
-                    ),
-                    level=messages.ERROR
-                )
-            # Abort sending
-            return
 
         total_sent = 0
 
@@ -262,10 +222,6 @@ class EmailMessageAdmin(admin.ModelAdmin):
 
         if total_emails == 0:
             self.message_user(request, "No active users with email addresses found.", level=messages.WARNING)
-            try:
-                connection.close()
-            except Exception:
-                pass
             return
 
         # iterate through selected EmailMessage objects
@@ -284,6 +240,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
                     logger.exception("Failed to fetch page %s: %s", page_num, e)
                     continue
 
+                # build messages for this batch
                 email_messages = []
                 for user in page.object_list:
                     if not user.email:
@@ -331,7 +288,6 @@ class EmailMessageAdmin(admin.ModelAdmin):
                             body=text_content,
                             from_email=default_from,
                             to=[user.email],
-                            connection=connection
                         )
                         msg.attach_alternative(html_content, "text/html")
                         email_messages.append(msg)
@@ -340,40 +296,85 @@ class EmailMessageAdmin(admin.ModelAdmin):
                         logger.exception("Email preparation failed for %s: %s", getattr(user, 'email', None), e)
                         # continue to next user
 
-                # try to send the batch; handle socket/ssl timeouts explicitly
+                # If no messages in this batch, continue
+                if not email_messages:
+                    # free memory and continue
+                    del email_messages
+                    gc.collect()
+                    continue
+
+                # Send this batch using a fresh connection with a request timeout applied
+                connection = None
                 try:
-                    if email_messages:
+                    # create connection - some backends accept timeout kw; use fallback if not
+                    try:
+                        connection = mail.get_connection(timeout=email_timeout)
+                    except TypeError:
+                        connection = mail.get_connection()
+
+                    # If using Anymail, it uses requests.Session internally; wrap its session.request
+                    # so all calls include a timeout. This prevents indefinite blocking.
+                    if hasattr(connection, 'session') and getattr(connection, 'session', None) is not None:
+                        orig_request = getattr(connection.session, 'request', None)
+                        if callable(orig_request):
+                            def _request_with_timeout(method, url, **kwargs):
+                                if 'timeout' not in kwargs or kwargs.get('timeout') is None:
+                                    kwargs['timeout'] = email_timeout
+                                return orig_request(method, url, **kwargs)
+                            connection.session.request = _request_with_timeout  # type: ignore
+
+                    # open, send, close connection for this batch
+                    try:
+                        connection.open()
+                    except Exception as e:
+                        logger.exception("Failed to open mail connection for batch %s: %s", page_num, e)
+                        # Provide admin hint
+                        if use_sendgrid:
+                            self.message_user(request, f"Failed to open SendGrid connection for batch {page_num}: {e}", level=messages.ERROR)
+                        else:
+                            self.message_user(request, f"Failed to open SMTP connection for batch {page_num}: {e}", level=messages.ERROR)
+                        # skip this batch
+                        continue
+
+                    try:
                         sent_count = connection.send_messages(email_messages) or 0
-                        # connection.send_messages may return integer or list - normalize:
+                        # normalize result (some backends return int, some return a list)
                         if isinstance(sent_count, (list, tuple)):
                             sent_count = len(sent_count)
-                        success_count += int(sent_count)
-                        total_sent += int(sent_count)
+                        sent_count = int(sent_count)
+                        success_count += sent_count
+                        total_sent += sent_count
                         logger.info("Sent batch %s/%s (%s emails)", page_num, paginator.num_pages, sent_count)
-                except (socket.timeout, ssl.SSLError) as net_err:
-                    logger.exception("Network/SMTP timeout or SSL error sending batch %s: %s", page_num, net_err)
-                    self.message_user(request, f"Network error sending batch {page_num}: {net_err}", level=messages.ERROR)
-                    # Skip this batch and continue — avoid crashing admin action
-                except Exception as e:
-                    # Log the detailed error and show a helpful admin message
-                    logger.exception("Failed to send batch %s: %s", page_num, e)
-                    # If using SendGrid/Anymail, include hint about API key / provider logs
-                    hint = ""
-                    if use_sendgrid:
-                        hint = " (Check SENDGRID_API_KEY, SendGrid dashboard, and that Anymail is installed.)"
-                    else:
-                        hint = " (Check SMTP host/port/credentials and provider restrictions.)"
+                    except (socket.timeout, ssl.SSLError, requests.exceptions.RequestException) as net_err:
+                        logger.exception("Network/requests error sending batch %s: %s", page_num, net_err)
+                        self.message_user(request, f"Network error sending batch {page_num}: {net_err}", level=messages.ERROR)
+                        # skip this batch and continue
+                    except Exception as e:
+                        logger.exception("Failed to send batch %s: %s", page_num, e)
+                        hint = " (Check SENDGRID_API_KEY, sender identity and Anymail logs.)" if use_sendgrid else " (Check SMTP host/port/credentials.)"
+                        self.message_user(request, f"Failed to send batch {page_num}: {e}{hint}", level=messages.ERROR)
+                    finally:
+                        try:
+                            connection.close()
+                        except Exception:
+                            pass
 
-                    self.message_user(request, f"Failed to send batch {page_num}: {e}{hint}", level=messages.ERROR)
+                finally:
+                    # free memory from this batch
+                    try:
+                        del email_messages
+                    except Exception:
+                        pass
+                    gc.collect()
 
-                # pause between batches to reduce spikes / respect rate limits
+                # pause between batches
                 try:
                     if pause_seconds:
                         time.sleep(pause_seconds)
                 except Exception:
                     pass
 
-            # mark email object as sent (this marks after trying all batches; adjust if you want stricter semantics)
+            # mark email object as sent (after attempting all batches)
             email_obj.sent_at = timezone.now()
             try:
                 email_obj.save(update_fields=['sent_at'])
@@ -386,12 +387,7 @@ class EmailMessageAdmin(admin.ModelAdmin):
                 level=messages.SUCCESS
             )
 
-        # close connection
-        try:
-            connection.close()
-        except Exception:
-            pass
-
+        # final admin message
         self.message_user(
             request,
             "Total: Sent {} emails out of {} recipients".format(total_sent, total_emails),
