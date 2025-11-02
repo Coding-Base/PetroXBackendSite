@@ -87,6 +87,9 @@ cloudinary
 django-cloudinary-storage
 django-anymail>=8.1.0
 sendgrid>=6.9.0
+django-rq>=2.6.0
+redis>=4.5.0
+rq>=1.10.0
 
 
 
