@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'cloudinary',
     'cloudinary_storage',
     'updates',
+    'django_rq',
    
 ]
 
@@ -273,6 +274,16 @@ LOGGING = {
             'level': 'DEBUG',
         },
     },
+}
+REDIS_URL = os.getenv('REDIS_URL', 'redis://red-cukj92tumphs73belin0:6379')
+DJANGO_RQ = {
+    'default': {
+        'USE_REDIS_CACHE': False,
+        'HOST': os.environ.get('REDIS_HOST', None),
+        # If you prefer a single URL:
+        'URL': REDIS_URL,
+        'DEFAULT_TIMEOUT': int(os.getenv('RQ_DEFAULT_TIMEOUT', 3600)),
+    }
 }
 
 
