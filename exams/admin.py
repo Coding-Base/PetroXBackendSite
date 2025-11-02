@@ -14,7 +14,7 @@ import socket
 import ssl
 import requests  # used only for exception class (requests.exceptions.RequestException)
 import gc
-
+import django_rq
 logger = logging.getLogger(__name__)
 
 
@@ -196,207 +196,34 @@ class EmailMessageAdmin(admin.ModelAdmin):
             '<span style="color: #cc0000; font-weight: bold;">✗ Not Sent</span>'
         )
     status_display.short_description = 'Status'
-
-    def send_emails(self, request, queryset):
+ def send_emails(self, request, queryset):
         """
-        Robust, non-blocking-friendly batched email sender.
-
-        - Uses per-batch connections with per-request timeouts (protects workers from hanging).
-        - Catches and logs errors per-batch so one failure doesn't kill the whole action.
-        - Cleans up memory between batches.
+        Enqueue selected EmailMessage objects to the RQ worker.
+        The worker will run exams.tasks.send_emailmessage_task for each id.
         """
-        # Config: batch size and pause
-        batch_size = max(1, int(getattr(settings, 'EMAIL_BATCH_SIZE', 20)))
-        pause_seconds = float(getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5))
-        # Per-request timeout (seconds) used for HTTP requests to SendGrid via Anymail/requests.
-        email_timeout = int(getattr(settings, 'EMAIL_TIMEOUT', getattr(settings, 'EMAIL_SMTP_TIMEOUT', 10)))
-        default_from = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
+        queue = django_rq.get_queue('default')
+        batch_size = int(getattr(settings, 'EMAIL_BATCH_SIZE', 20))
+        pause = float(getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5))
+        timeout = int(getattr(settings, 'EMAIL_TIMEOUT', getattr(settings, 'EMAIL_SMTP_TIMEOUT', 10)))
 
-        use_sendgrid = getattr(settings, 'USE_SENDGRID', True)
-
-        total_sent = 0
-
-        # base queryset (only active users with email)
-        users_qs = User.objects.filter(is_active=True).exclude(email='').order_by('id')
-        total_emails = users_qs.count()
-
-        if total_emails == 0:
-            self.message_user(request, "No active users with email addresses found.", level=messages.WARNING)
-            return
-
-        # iterate through selected EmailMessage objects
         for email_obj in queryset:
             if email_obj.sent_at:
-                self.message_user(request, f"Email '{email_obj.subject}' was already sent", level=messages.WARNING)
+                self.message_user(request, f"Email '{email_obj.subject}' (id={email_obj.id}) was already sent at {email_obj.sent_at}", level=messages.WARNING)
                 continue
 
-            success_count = 0
-            paginator = Paginator(users_qs, batch_size)
-
-            for page_num in paginator.page_range:
-                try:
-                    page = paginator.page(page_num)
-                except Exception as e:
-                    logger.exception("Failed to fetch page %s: %s", page_num, e)
-                    continue
-
-                # build messages for this batch
-                email_messages = []
-                for user in page.object_list:
-                    if not user.email:
-                        continue
-                    try:
-                        context = {
-                            'user': user,
-                            'content': email_obj.content,
-                            'button_text': email_obj.button_text,
-                            'button_link': email_obj.button_link,
-                            'subject': email_obj.subject,
-                            'FRONTEND_DOMAIN': getattr(settings, 'FRONTEND_DOMAIN', '')
-                        }
-
-                        # render template; fallback if it fails
-                        try:
-                            html_content = render_to_string('email/email_template.html', context)
-                        except Exception as render_error:
-                            logger.exception(
-                                "Template render error for user %s: %s",
-                                getattr(user, 'email', '<no email>'),
-                                render_error
-                            )
-                            link_html = ''
-                            if email_obj.button_text and email_obj.button_link:
-                                link_html = '<a href="{0}">{1}</a>'.format(email_obj.button_link, email_obj.button_text)
-
-                            html_content = (
-                                '<html><body>'
-                                '<h2>{subject}</h2>'
-                                '<div>{content}</div>'
-                                '{link_html}'
-                                '<p>Sent by Petrox Assessment Platform</p>'
-                                '</body></html>'
-                            ).format(subject=email_obj.subject, content=email_obj.content, link_html=link_html)
-
-                        # plain-text
-                        text_content = "{}\n\n{}\n\n".format(email_obj.subject, email_obj.content)
-                        if email_obj.button_text and email_obj.button_link:
-                            text_content += "{}: {}\n\n".format(email_obj.button_text, email_obj.button_link)
-                        text_content += "Unsubscribe: {}/unsubscribe".format(getattr(settings, 'FRONTEND_DOMAIN', '').rstrip('/'))
-
-                        msg = mail.EmailMultiAlternatives(
-                            subject=email_obj.subject,
-                            body=text_content,
-                            from_email=default_from,
-                            to=[user.email],
-                        )
-                        msg.attach_alternative(html_content, "text/html")
-                        email_messages.append(msg)
-
-                    except Exception as e:
-                        logger.exception("Email preparation failed for %s: %s", getattr(user, 'email', None), e)
-                        # continue to next user
-
-                # If no messages in this batch, continue
-                if not email_messages:
-                    # free memory and continue
-                    del email_messages
-                    gc.collect()
-                    continue
-
-                # Send this batch using a fresh connection with a request timeout applied
-                connection = None
-                try:
-                    # create connection - some backends accept timeout kw; use fallback if not
-                    try:
-                        connection = mail.get_connection(timeout=email_timeout)
-                    except TypeError:
-                        connection = mail.get_connection()
-
-                    # If using Anymail, it uses requests.Session internally; wrap its session.request
-                    # so all calls include a timeout. This prevents indefinite blocking.
-                    if hasattr(connection, 'session') and getattr(connection, 'session', None) is not None:
-                        orig_request = getattr(connection.session, 'request', None)
-                        if callable(orig_request):
-                            def _request_with_timeout(method, url, **kwargs):
-                                if 'timeout' not in kwargs or kwargs.get('timeout') is None:
-                                    kwargs['timeout'] = email_timeout
-                                return orig_request(method, url, **kwargs)
-                            connection.session.request = _request_with_timeout  # type: ignore
-
-                    # open, send, close connection for this batch
-                    try:
-                        connection.open()
-                    except Exception as e:
-                        logger.exception("Failed to open mail connection for batch %s: %s", page_num, e)
-                        # Provide admin hint
-                        if use_sendgrid:
-                            self.message_user(request, f"Failed to open SendGrid connection for batch {page_num}: {e}", level=messages.ERROR)
-                        else:
-                            self.message_user(request, f"Failed to open SMTP connection for batch {page_num}: {e}", level=messages.ERROR)
-                        # skip this batch
-                        continue
-
-                    try:
-                        sent_count = connection.send_messages(email_messages) or 0
-                        # normalize result (some backends return int, some return a list)
-                        if isinstance(sent_count, (list, tuple)):
-                            sent_count = len(sent_count)
-                        sent_count = int(sent_count)
-                        success_count += sent_count
-                        total_sent += sent_count
-                        logger.info("Sent batch %s/%s (%s emails)", page_num, paginator.num_pages, sent_count)
-                    except (socket.timeout, ssl.SSLError, requests.exceptions.RequestException) as net_err:
-                        logger.exception("Network/requests error sending batch %s: %s", page_num, net_err)
-                        self.message_user(request, f"Network error sending batch {page_num}: {net_err}", level=messages.ERROR)
-                        # skip this batch and continue
-                    except Exception as e:
-                        logger.exception("Failed to send batch %s: %s", page_num, e)
-                        hint = " (Check SENDGRID_API_KEY, sender identity and Anymail logs.)" if use_sendgrid else " (Check SMTP host/port/credentials.)"
-                        self.message_user(request, f"Failed to send batch {page_num}: {e}{hint}", level=messages.ERROR)
-                    finally:
-                        try:
-                            connection.close()
-                        except Exception:
-                            pass
-
-                finally:
-                    # free memory from this batch
-                    try:
-                        del email_messages
-                    except Exception:
-                        pass
-                    gc.collect()
-
-                # pause between batches
-                try:
-                    if pause_seconds:
-                        time.sleep(pause_seconds)
-                except Exception:
-                    pass
-
-            # mark email object as sent (after attempting all batches)
-            email_obj.sent_at = timezone.now()
-            try:
-                email_obj.save(update_fields=['sent_at'])
-            except Exception:
-                logger.exception("Failed to mark EmailMessage %s as sent_at", getattr(email_obj, 'id', '<unknown>'))
-
-            self.message_user(
-                request,
-                "Sent '{}' to {}/{} users".format(email_obj.subject, success_count, total_emails),
-                level=messages.SUCCESS
+            # enqueue the task
+            job = queue.enqueue(
+                'exams.tasks.send_emailmessage_task',
+                email_obj.id,
+                batch_size,
+                pause,
+                timeout,
+                None,  # test_to = None for real run; admin UI shows test command separately
+                job_timeout=int(getattr(settings, 'RQ_JOB_TIMEOUT', 7200))  # set a safe job timeout
             )
 
-        # final admin message
-        self.message_user(
-            request,
-            "Total: Sent {} emails out of {} recipients".format(total_sent, total_emails),
-            level=messages.INFO
-        )
+            # notify admin with job id and run info
+            self.message_user(request, f"Enqueued '{email_obj.subject}' (id={email_obj.id}) as job {job.id}.", level=messages.SUCCESS)
+            self.message_user(request, f"Run status / logs available in your worker logs. To test locally: python manage.py send_emailmessage --id {email_obj.id} --test-to youremail@example.com", level=messages.INFO)
+    send_emails.short_description = "Queue selected emails for background sending (RQ worker)"
 
-    send_emails.short_description = "Send selected emails to all users"
-
-    def get_readonly_fields(self, request, obj=None):
-        if obj and obj.sent_at:
-            return [f.name for f in self.model._meta.fields] + ['status_display']
-        return super().get_readonly_fields(request, obj)
