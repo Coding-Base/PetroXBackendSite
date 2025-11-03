@@ -1,20 +1,28 @@
 # exams/admin.py
+import os
+import json
+import logging
+import time
+import socket
+import ssl
+import requests
+import gc
+
 from django.contrib import admin, messages
-from .models import Course, Question, TestSession, GroupTest, Material, EmailMessage
 from django.utils.html import format_html
 from django.core import mail
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.contrib.auth.models import User
 from django.conf import settings
-import logging
-import time
 from django.core.paginator import Paginator
-import socket
-import ssl
-import requests  # used only for exception class (requests.exceptions.RequestException)
-import gc
+from django.shortcuts import redirect
+from django.urls import path, reverse
+
 import django_rq
+
+from .models import Course, Question, TestSession, GroupTest, Material, EmailMessage
+
 logger = logging.getLogger(__name__)
 
 
@@ -196,7 +204,11 @@ class EmailMessageAdmin(admin.ModelAdmin):
             '<span style="color: #cc0000; font-weight: bold;">✗ Not Sent</span>'
         )
     status_display.short_description = 'Status'
- def send_emails(self, request, queryset):
+
+    # ---------------------------
+    # Admin action: enqueue to RQ
+    # ---------------------------
+    def send_emails(self, request, queryset):
         """
         Enqueue selected EmailMessage objects to the RQ worker.
         The worker will run exams.tasks.send_emailmessage_task for each id.
@@ -218,12 +230,111 @@ class EmailMessageAdmin(admin.ModelAdmin):
                 batch_size,
                 pause,
                 timeout,
-                None,  # test_to = None for real run; admin UI shows test command separately
-                job_timeout=int(getattr(settings, 'RQ_JOB_TIMEOUT', 7200))  # set a safe job timeout
+                None,  # test_to = None for real run
+                job_timeout=int(getattr(settings, 'RQ_JOB_TIMEOUT', 7200))
             )
 
             # notify admin with job id and run info
             self.message_user(request, f"Enqueued '{email_obj.subject}' (id={email_obj.id}) as job {job.id}.", level=messages.SUCCESS)
-            self.message_user(request, f"Run status / logs available in your worker logs. To test locally: python manage.py send_emailmessage --id {email_obj.id} --test-to youremail@example.com", level=messages.INFO)
+            self.message_user(request, f"Run status / logs available in your worker logs. For local test: python manage.py send_emailmessage --id {email_obj.id} --test-to youremail@example.com", level=messages.INFO)
     send_emails.short_description = "Queue selected emails for background sending (RQ worker)"
 
+    # ---------------------------
+    # Admin: Render one-off trigger per-object
+    # ---------------------------
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:object_id>/trigger-render-send/', self.admin_site.admin_view(self.admin_trigger_send), name='exams_emailmessage_trigger'),
+        ]
+        return custom_urls + urls
+
+    def admin_trigger_send(self, request, object_id, *args, **kwargs):
+        """
+        Admin-only endpoint that triggers a Render one-off job for the given EmailMessage id.
+        Creates a Render job that runs:
+          python manage.py send_emailmessage --id <object_id> --batch-size ... --pause ... --timeout ...
+        """
+        # Security check (admin_site.admin_view already ensures login + staff)
+        try:
+            email_obj = EmailMessage.objects.get(pk=object_id)
+        except EmailMessage.DoesNotExist:
+            self.message_user(request, "EmailMessage not found.", level=messages.ERROR)
+            return redirect(request.META.get('HTTP_REFERER', reverse('admin:exams_emailmessage_changelist')))
+
+        if email_obj.sent_at:
+            self.message_user(request, f"'{email_obj.subject}' was already sent at {email_obj.sent_at}.", level=messages.WARNING)
+            return redirect(request.META.get('HTTP_REFERER', reverse('admin:exams_emailmessage_change', args=[object_id])))
+
+        # Build command and call Render API
+        batch_size = int(getattr(settings, 'EMAIL_BATCH_SIZE', 20))
+        pause = float(getattr(settings, 'EMAIL_BATCH_PAUSE', 0.5))
+        timeout = int(getattr(settings, 'EMAIL_TIMEOUT', getattr(settings, 'EMAIL_SMTP_TIMEOUT', 10)))
+
+        service_id = os.getenv('RENDER_SERVICE_ID', 'srv-cujrrlogph6c73bl2t40')
+        api_key = os.getenv('RENDER_API_KEY')
+        if not api_key:
+            self.message_user(request, "Render API key not configured (RENDER_API_KEY). Set env var and retry.", level=messages.ERROR)
+            return redirect(request.META.get('HTTP_REFERER', reverse('admin:exams_emailmessage_change', args=[object_id])))
+
+        if request.method == 'POST':
+            # create startCommand
+            start_cmd = f"python manage.py send_emailmessage --id {object_id} --batch-size {batch_size} --pause {pause} --timeout {timeout}"
+            api_url = f"https://api.render.com/v1/services/{service_id}/jobs"
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            body = {"startCommand": start_cmd}
+
+            try:
+                resp = requests.post(api_url, headers=headers, json=body, timeout=15)
+            except requests.RequestException as exc:
+                logger.exception("Render API error for email_id=%s: %s", object_id, exc)
+                self.message_user(request, f"Render API request failed: {exc}", level=messages.ERROR)
+                return redirect(request.META.get('HTTP_REFERER', reverse('admin:exams_emailmessage_change', args=[object_id])))
+
+            if resp.status_code >= 400:
+                try:
+                    jr = resp.json()
+                except Exception:
+                    jr = {"status_code": resp.status_code, "text": resp.text}
+                self.message_user(request, format_html("Render API returned an error: <pre>{}</pre>", jr), level=messages.ERROR)
+            else:
+                try:
+                    jr = resp.json()
+                except Exception:
+                    jr = {"status_code": resp.status_code, "text": resp.text}
+                job_id = jr.get('id') or jr.get('jobId') or jr.get('job_id') or '(unknown)'
+                self.message_user(request, format_html("Created Render job <strong>{}</strong>. Check Render dashboard jobs for logs.", job_id), level=messages.SUCCESS)
+
+            return redirect(request.META.get('HTTP_REFERER', reverse('admin:exams_emailmessage_change', args=[object_id])))
+
+        # If not POST, show clickable button as admin info message (admin-only)
+        trigger_url = reverse('admin:exams_emailmessage_trigger', args=[object_id])
+        # Use a small HTML form simulated link to POST via JS for convenience
+        html = format_html(
+            '<form style="display:inline" method="post" action="{}">'
+            '{{% csrf_token %}}'
+            '<button type="submit" class="button" style="background:#4CAF50;color:white;border:none;padding:6px 12px;border-radius:4px;">Trigger one-off send (Render job)</button>'
+            '</form>',
+            trigger_url
+        )
+        # Because we cannot render template tokens inside format_html, provide a normal link
+        # The admin csrf token won't be present in this message; instead we show the POST URL and instruct the admin.
+        info_html = format_html(
+            'To trigger a Render one-off job for this EmailMessage, click the button (requires POST): '
+            '<a href="{}" style="padding:6px 12px;background:#2196F3;color:white;border-radius:4px;text-decoration:none;">Trigger one-off send (create Render job)</a>'
+            '<br><small>If you want a safer test, use the management command: <code>python manage.py send_emailmessage --id {}</code></small>',
+            reverse('admin:exams_emailmessage_trigger', args=[object_id]),
+            object_id
+        )
+        # Display the clickable link as an admin message (staff only will see it)
+        self.message_user(request, info_html, level=messages.INFO)
+        # Redirect back to change page so the admin message appears at top
+        return redirect(request.META.get('HTTP_REFERER', reverse('admin:exams_emailmessage_change', args=[object_id])))
+
+    # ---------------------------
+    # readonly fields helper
+    # ---------------------------
+    def get_readonly_fields(self, request, obj=None):
+        if obj and obj.sent_at:
+            return [f.name for f in self.model._meta.fields] + ['status_display']
+        return super().get_readonly_fields(request, obj)
