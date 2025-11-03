@@ -1,0 +1,48 @@
+name: Run send_emailmessage on GitHub runner (safe test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      email_id:
+        description: 'EmailMessage id to test (e.g. 17)'
+        required: true
+        default: '17'
+      test_to:
+        description: 'Test recipient email (single address)'
+        required: true
+        default: 'you@example.com'
+      timeout:
+        description: 'Request timeout seconds'
+        required: false
+        default: '15'
+
+jobs:
+  run-send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run management command (test-to)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          DEFAULT_FROM_EMAIL: ${{ secrets.DEFAULT_FROM_EMAIL }}
+          FRONTEND_DOMAIN: ${{ secrets.FRONTEND_DOMAIN }}
+          # add any other required envs here
+        run: |
+          set -e
+          # optional: run migrations if you need them
+          # python manage.py migrate --noinput || true
+          python manage.py send_emailmessage --id ${{ github.event.inputs.email_id }} --test-to "${{ github.event.inputs.test_to }}" --timeout ${{ github.event.inputs.timeout }}
