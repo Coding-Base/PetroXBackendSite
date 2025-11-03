@@ -1,56 +1,105 @@
-name: Trigger Render one-off email jobs
+name: Trigger Render one-off jobs
 
 on:
   workflow_dispatch:
     inputs:
-      email_ids:
-        description: 'Comma-separated EmailMessage ids to send (e.g. 123,124). If empty, workflow will exit.'
+      mode:
+        description: 'Mode: send (run send_emailmessage per id) OR worker (start rqworker to process queued jobs)'
         required: true
-        default: ''
-      test_to:
-        description: 'Optional: test email address to send to (single recipient).'
+        default: 'send'
+      email_ids:
+        description: 'Comma-separated EmailMessage ids (required for mode=send). E.g. "17" or "17,18"'
         required: false
         default: ''
+      test_to:
+        description: 'Optional: single email address to use --test-to (safer)'
+        required: false
+        default: ''
+      batch_size:
+        description: 'Optional batch size for send command'
+        required: false
+        default: '50'
+      pause:
+        description: 'Optional pause between batches (seconds)'
+        required: false
+        default: '1'
+      timeout:
+        description: 'Optional per-request timeout (seconds)'
+        required: false
+        default: '15'
   schedule:
-    - cron: '0 9 * * *'  # example: run every day at 09:00 UTC (customize or remove)
+    - cron: '0 9 * * *'  # OPTIONAL: runs daily at 09:00 UTC — remove or change as needed
 
 jobs:
-  trigger:
+  trigger-render:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate input
+      - name: Validate inputs
         id: validate
         run: |
-          if [ -z "${{ github.event.inputs.email_ids }}" ]; then
-            echo "No email_ids provided; exiting."
-            exit 1
-          fi
-          echo "EMAIL_IDS=${{ github.event.inputs.email_ids }}" >> $GITHUB_OUTPUT
-          echo "TEST_TO=${{ github.event.inputs.test_to }}" >> $GITHUB_OUTPUT
+          echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+          echo "email_ids=${{ github.event.inputs.email_ids }}" >> $GITHUB_OUTPUT
+          echo "test_to=${{ github.event.inputs.test_to }}" >> $GITHUB_OUTPUT
+          echo "batch_size=${{ github.event.inputs.batch_size }}" >> $GITHUB_OUTPUT
+          echo "pause=${{ github.event.inputs.pause }}" >> $GITHUB_OUTPUT
+          echo "timeout=${{ github.event.inputs.timeout }}" >> $GITHUB_OUTPUT
 
-      - name: Trigger Render jobs for each id
+      - name: Trigger Render one-off job(s)
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: "srv-cujrrlogph6c73bl2t40"
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          MODE: ${{ steps.validate.outputs.mode }}
+          EMAIL_IDS: ${{ steps.validate.outputs.email_ids }}
+          TEST_TO: ${{ steps.validate.outputs.test_to }}
+          BATCH_SIZE: ${{ steps.validate.outputs.batch_size }}
+          PAUSE: ${{ steps.validate.outputs.pause }}
+          TIMEOUT: ${{ steps.validate.outputs.timeout }}
         run: |
-          set -e
-          EMAIL_IDS="${{ steps.validate.outputs.EMAIL_IDS }}"
-          TEST_TO="${{ steps.validate.outputs.TEST_TO }}"
-          IFS=',' read -ra IDS <<< "$EMAIL_IDS"
-          for id in "${IDS[@]}"; do
-            id_trimmed="$(echo "$id" | tr -d '[:space:]')"
-            if [ -z "$id_trimmed" ]; then
-              continue
-            fi
-            if [ -n "$TEST_TO" ]; then
-              START_CMD="python manage.py send_emailmessage --id ${id_trimmed} --test-to ${TEST_TO} --timeout 15"
-            else
-              START_CMD="python manage.py send_emailmessage --id ${id_trimmed} --batch-size 50 --pause 1 --timeout 15"
-            fi
-            echo "Creating job for EmailMessage id=$id_trimmed"
-            resp=$(curl -s -X POST "https://api.render.com/v1/services/${SERVICE_ID}/jobs" \
+          set -euo pipefail
+
+          if [ -z "${RENDER_API_KEY:-}" ] || [ -z "${SERVICE_ID:-}" ]; then
+            echo "Missing RENDER_API_KEY or SERVICE_ID secrets."
+            exit 1
+          fi
+
+          API_URL="https://api.render.com/v1/services/${SERVICE_ID}/jobs"
+          echo "Render API URL: $API_URL"
+          MODE="${MODE:-send}"
+          echo "Mode: $MODE"
+
+          if [ "$MODE" = "worker" ]; then
+            START_CMD='python manage.py rqworker default'
+            echo "Creating worker one-off job..."
+            resp=$(curl -s -X POST "$API_URL" \
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json" \
               -d "{\"startCommand\": ${START_CMD@Q}}")
             echo "Response: $resp"
+            exit 0
+          fi
+
+          # Mode: send
+          if [ -z "${EMAIL_IDS}" ]; then
+            echo "email_ids is empty — you must provide email ids for mode=send."
+            exit 1
+          fi
+
+          # split by comma and trigger a job per id
+          IFS=',' read -ra IDS <<< "$EMAIL_IDS"
+          for rawid in "${IDS[@]}"; do
+            id="$(echo $rawid | tr -d '[:space:]')"
+            if [ -z "$id" ]; then
+              continue
+            fi
+            if [ -n "${TEST_TO}" ]; then
+              START_CMD="python manage.py send_emailmessage --id ${id} --test-to ${TEST_TO} --timeout ${TIMEOUT}"
+            else
+              START_CMD="python manage.py send_emailmessage --id ${id} --batch-size ${BATCH_SIZE} --pause ${PAUSE} --timeout ${TIMEOUT}"
+            fi
+            echo "Creating one-off job for EmailMessage id=${id}"
+            resp=$(curl -s -X POST "$API_URL" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"startCommand\": ${START_CMD@Q}}")
+            echo "Response for id=${id}: $resp"
           done
