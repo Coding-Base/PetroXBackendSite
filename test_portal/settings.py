@@ -6,6 +6,7 @@ from datetime import timedelta
 
 # corsheaders defaults
 from corsheaders.defaults import default_headers, default_methods
+from urllib.parse import urlparse
 
 # Load environment variables
 load_dotenv()
@@ -284,6 +285,29 @@ DJANGO_RQ = {
         'URL': REDIS_URL,
         'DEFAULT_TIMEOUT': int(os.getenv('RQ_DEFAULT_TIMEOUT', 3600)),
     }
+}
+
+# If not provided, falls back to localhost (development only).
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# Parse the URL if needed (not strictly required, but useful if you want host/port)
+parsed_redis = urlparse(REDIS_URL)
+
+# RQ / django-rq expects RQ_QUEUES in settings.py
+# We provide a minimal config using the full URL; this satisfies django_rq and works for Render.
+RQ_QUEUES = {
+    "default": {
+        "URL": REDIS_URL,
+        # optional: how long a job can run before it's killed (seconds)
+        "DEFAULT_TIMEOUT": int(os.getenv("RQ_DEFAULT_TIMEOUT", 3600)),
+    }
+}
+
+# Optional convenience for django-rq admin/panel
+DJANGO_RQ = {
+    "DEFAULT": {
+        "URL": REDIS_URL,
+    },
 }
 
 
