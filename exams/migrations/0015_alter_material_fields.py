@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('exams', '0014_emailmessage_alter_material_file_alter_material_tags'),
+        ('exams', '0013_alter_material_tags'),
     ]
 
     operations = [
