@@ -6,7 +6,8 @@ from .views.courses import CourseListAPIView
 from .views.materials import (
     MaterialUploadView, 
     MaterialDownloadView, 
-    MaterialSearchView
+    MaterialSearchView,
+    MaterialListView
 )
 from .views.questions import (
     AddQuestionAPIView,
@@ -25,6 +26,7 @@ from .views.leaderboard import LeaderboardAPIView, user_rank, user_upload_stats
 
 urlpatterns = [
     path('users/', RegisterUserAPIView.as_view(), name='register-user'),
+    path('materials/', MaterialListView.as_view(), name='material-list'),
     path('materials/upload/', MaterialUploadView.as_view(), name='material-upload'),
     path('materials/download/<int:pk>/', MaterialDownloadView.as_view(), name='material-download'),
     path('materials/search/', MaterialSearchView.as_view(), name='material-search'),

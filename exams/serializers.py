@@ -7,16 +7,18 @@ from django.conf import settings
 
 
 class MaterialSerializer(serializers.ModelSerializer):
-    file = serializers.FileField(write_only=True)  # Add this field for file upload
-    file_url = serializers.SerializerMethodField()
+    file = serializers.FileField(write_only=True, required=False)  # File input for upload only
+    file_url = serializers.SerializerMethodField()  # File URL for download
+    course_name = serializers.CharField(source='course.name', read_only=True)
 
     class Meta:
         model = Material
-        fields = ['id', 'name', 'tags', 'file', 'file_url', 'course', 'uploaded_by', 'uploaded_at']
-        read_only_fields = ['uploaded_by', 'uploaded_at', 'file_url']
+        fields = ['id', 'name', 'tags', 'file', 'file_url', 'course', 'course_name', 'uploaded_by', 'uploaded_at']
+        read_only_fields = ['uploaded_by', 'uploaded_at', 'file_url', 'course_name']
 
     def get_file_url(self, obj):
-        return obj.file
+        """Return the stored Cloudinary URL"""
+        return obj.file if obj.file else None
 
 
 class GroupTestSerializer(serializers.ModelSerializer):
