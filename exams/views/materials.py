@@ -161,16 +161,40 @@ class MaterialSearchView(ListAPIView):
     """
     GET /api/materials/search/?query=...
     Returns matching materials (MaterialSerializer).
+    Searches by name, tags, or course name.
     """
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         q = self.request.query_params.get("query", "").strip()
+        
+        # Log the search query for debugging
+        logger.info(f"Material search initiated with query: '{q}'")
+        
         if not q:
+            logger.warning("Empty search query provided")
             return Material.objects.none()
-        return Material.objects.filter(
+        
+        # Build the filter with Q objects
+        queryset = Material.objects.filter(
             Q(name__icontains=q) |
             Q(tags__icontains=q) |
             Q(course__name__icontains=q)
-        )
+        ).distinct()
+        
+        result_count = queryset.count()
+        logger.info(f"Search returned {result_count} results for query '{q}'")
+        
+        return queryset
+
+
+class MaterialListView(ListAPIView):
+    """
+    GET /api/materials/
+    Returns all materials (paginated) for the authenticated user.
+    Useful for browsing and testing.
+    """
+    queryset = Material.objects.all().order_by('-uploaded_at')
+    serializer_class = MaterialSerializer
+    permission_classes = [IsAuthenticated]
