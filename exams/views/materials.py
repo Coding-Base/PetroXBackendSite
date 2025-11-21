@@ -3,6 +3,7 @@ import logging
 
 from django.conf import settings
 from django.db import DataError, IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 import cloudinary.uploader
@@ -169,7 +170,7 @@ class MaterialSearchView(ListAPIView):
         if not q:
             return Material.objects.none()
         return Material.objects.filter(
-            models.Q(name__icontains=q) |
-            models.Q(tags__icontains=q) |
-            models.Q(course__name__icontains=q)
+            Q(name__icontains=q) |
+            Q(tags__icontains=q) |
+            Q(course__name__icontains=q)
         )
