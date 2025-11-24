@@ -128,8 +128,11 @@ class MaterialUploadView(generics.CreateAPIView):
 class MaterialDownloadView(RetrieveAPIView):
     """
     Return a download URL for the given material id.
-    Prefer generating a signed URL (if needed) via get_cloudinary_signed_or_public_url,
-    otherwise fall back to the saved file URL string.
+    If Cloudinary resources are restricted (e.g., admin-only folder),
+    returns a signed URL. Otherwise returns public URL.
+    
+    GET /api/materials/download/{id}/
+    Response: { "download_url": "https://..." }
     """
     queryset = Material.objects.all()
     serializer_class = MaterialSerializer
@@ -138,21 +141,20 @@ class MaterialDownloadView(RetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         material = self.get_object()
 
-        # material.file may already be a URL string (we store secure_url)
+        # material.file is the Cloudinary URL string
         file_value = getattr(material, "file", None)
 
-        # Try cloudinary helper which may accept either a Material instance or a string.
         try:
-            # call helper defensively - it should accept either a string or object; if not, handle fallback below
-            download_url = get_cloudinary_signed_or_public_url(file_value)
+            # Generate signed URL (if needed) or fall back to public URL
+            # URLs are valid for 1 hour by default
+            download_url = get_cloudinary_signed_or_public_url(file_value, expires_in=3600)
         except Exception as e:
-            logger.warning("get_cloudinary_signed_or_public_url failed: %s; falling back to stored URL", e)
-            # If the helper failed but the saved value is a valid URL string, use it
-            if isinstance(file_value, str) and (file_value.startswith("http://") or file_value.startswith("https://") or file_value.startswith("//")):
-                download_url = file_value
-            else:
-                logger.exception("Failed to generate download URL for Material id=%s", getattr(material, "id", "<unknown>"))
-                raise APIException(detail="Failed to generate download URL")
+            logger.exception("Failed to generate download URL for Material id=%s", material.id)
+            raise APIException(detail="Failed to generate download URL")
+
+        if not download_url:
+            logger.error("No download URL available for Material id=%s", material.id)
+            raise APIException(detail="Failed to generate download URL")
 
         return Response({"download_url": download_url}, status=status.HTTP_200_OK)
 
