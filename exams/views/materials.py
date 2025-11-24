@@ -144,10 +144,15 @@ class MaterialDownloadView(RetrieveAPIView):
         # material.file is the Cloudinary URL string
         file_value = getattr(material, "file", None)
 
+        if not file_value:
+            logger.error("Material id=%s has no file value", material.id)
+            raise APIException(detail="No file is associated with this material")
+
         try:
+            # Pass the material instance to the helper (it will inspect .file/.url/.name)
             # Generate signed URL (if needed) or fall back to public URL
             # URLs are valid for 1 hour by default
-            download_url = get_cloudinary_signed_or_public_url(file_value, expires_in=3600)
+            download_url = get_cloudinary_signed_or_public_url(material, expires_in=3600)
         except Exception as e:
             logger.exception("Failed to generate download URL for Material id=%s", material.id)
             raise APIException(detail="Failed to generate download URL")
