@@ -124,7 +124,11 @@ def _generate_signed_url(public_id, cloud_name, expires_in=3600):
     try:
         # Ensure cloudinary is configured with credentials
         if not cloudinary.config().api_secret:
-            logger.warning("Cloudinary API_SECRET not configured; signed URLs unavailable")
+            logger.warning(
+                "⚠️  CLOUDINARY_API_SECRET not configured! "
+                "Signed URLs cannot be generated for restricted resources. "
+                "Set CLOUDINARY_API_SECRET in environment variables or change Cloudinary folder to public access."
+            )
             return None
 
         # Generate a signed URL for the raw resource
@@ -136,10 +140,10 @@ def _generate_signed_url(public_id, cloud_name, expires_in=3600):
             secure=True,
             expires_in=expires_in,
         )
-        logger.debug(f"Generated signed URL for {public_id} (expires in {expires_in}s)")
+        logger.debug(f"✓ Generated signed URL for {public_id} (expires in {expires_in}s)")
         return url
     except Exception as e:
-        logger.error(f"Error generating signed URL for {public_id}: {e}")
+        logger.error(f"❌ Error generating signed URL for {public_id}: {e}")
         return None
 
 
