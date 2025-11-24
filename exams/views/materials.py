@@ -169,11 +169,18 @@ class MaterialSearchView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        q = self.request.query_params.get("query", "").strip()
-        
-        # Log the search query for debugging
+        # Accept either ?query=term or accidentally encoded ?query[query]=term
+        raw_params = self.request.GET.dict()
+        logger.debug("Raw search GET params: %s", raw_params)
+
+        q = self.request.query_params.get("query")
+        # fallback for malformed/wrapped param names like query[query]
+        if not q:
+            q = self.request.query_params.get('query[query]') or self.request.query_params.get('query%5Bquery%5D')
+
+        q = (q or "").strip()
         logger.info(f"Material search initiated with query: '{q}'")
-        
+
         if not q:
             logger.warning("Empty search query provided")
             return Material.objects.none()
