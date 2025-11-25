@@ -185,7 +185,8 @@ CLOUDINARY_STORAGE = {
     "API_SECRET": os.getenv("CLOUDINARY_API_SECRET", ""),
     # 'RESOURCE_TYPE': 'auto'  # default is 'auto'; for raw files Cloudinary will store as raw
 }
-CLOUDINARY_MAX_UPLOAD_BYTES = int(os.getenv("CLOUDINARY_MAX_UPLOAD_BYTES", 100 * 1024 * 1024))
+# Cloudinary max upload: 10MB (Cloudinary free tier limit)
+CLOUDINARY_MAX_UPLOAD_BYTES = int(os.getenv("CLOUDINARY_MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
 CLOUDINARY_MAX_UPLOAD_MB = CLOUDINARY_MAX_UPLOAD_BYTES // (1024 * 1024)
 
 # Server-side material/file upload size limit used by the materials upload view.
