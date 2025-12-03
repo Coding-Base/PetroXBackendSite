@@ -3,6 +3,84 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
 
+from django.utils import timezone
+
+User = settings.AUTH_USER_MODEL
+
+class UserProfile(models.Model):
+    """Extended user profile with registration number and department."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    registration_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    department = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username}'s Profile"
+
+class SpecialCourse(models.Model):
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    duration_minutes = models.PositiveIntegerField(default=0, help_text='Optional duration override')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_active(self):
+        now = timezone.now()
+        return self.start_time <= now <= self.end_time
+
+    def has_started(self):
+        return timezone.now() >= self.start_time
+
+    def has_finished(self):
+        return timezone.now() > self.end_time
+
+    def __str__(self):
+        return self.title
+
+class Question(models.Model):
+    course = models.ForeignKey(SpecialCourse, on_delete=models.CASCADE, related_name='questions')
+    text = models.TextField()
+    mark = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return f"Q{self.id} - {self.course.title}"
+
+class Choice(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='choices')
+    text = models.CharField(max_length=1024)
+    is_correct = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Choice {self.id} for Q{self.question.id}"
+
+class Enrollment(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrollments')
+    course = models.ForeignKey(SpecialCourse, on_delete=models.CASCADE, related_name='enrollments')
+    enrolled_at = models.DateTimeField(auto_now_add=True)
+    started = models.BooleanField(default=False)
+    submitted = models.BooleanField(default=False)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    score = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('user', 'course')
+
+    def __str__(self):
+        return f"{self.user} -> {self.course}"
+
+class Answer(models.Model):
+    enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, related_name='answers')
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
+    answered_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('enrollment', 'question')
+
+
 
 class EmailMessage(models.Model):
     subject = models.CharField(max_length=255)

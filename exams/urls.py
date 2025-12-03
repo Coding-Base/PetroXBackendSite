@@ -9,6 +9,7 @@ from .views.materials import (
     MaterialSearchView,
     MaterialListView
 )
+from .views import examFeatures
 from .views.questions import (
     AddQuestionAPIView,
     QuestionApprovalView,
@@ -46,5 +47,15 @@ urlpatterns = [
     path('user/upload-stats/', user_upload_stats, name='user-upload-stats'),
     path('preview-pass-questions/', PreviewPassQuestionsView.as_view(), name='preview-pass-questions'),
     path('debug-auth/', debug_auth),
+    # Special Courses Endpoints
+    path('courses/', examFeatures.SpecialCourseList.as_view(), name='special-courses-list'),
+    path('enrollments/', examFeatures.get_enrolled_courses, name='enrollments-list'),
+    path('courses/<int:course_id>/enroll/', examFeatures.enroll_course, name='enroll-course'),
+    path('enrollment/<int:enrollment_id>/', examFeatures.enrollment_detail, name='enrollment-detail'),
+    path('enrollment/<int:enrollment_id>/start/', examFeatures.start_exam, name='start-exam'),
+    path('enrollment/<int:enrollment_id>/submit/', examFeatures.submit_exam, name='submit-exam'),
+    path('admin/finalize/', examFeatures.finalize_due_exams, name='finalize-exams'),
+    path('courses/<int:course_id>/export/', examFeatures.export_course_results, name='export-results'),
 ]
+
 

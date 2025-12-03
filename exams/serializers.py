@@ -82,3 +82,41 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
         model = Question
         fields = ['id', 'status', 'question_text']
         read_only_fields = ['id', 'question_text']
+
+
+from rest_framework import serializers
+from .models import SpecialCourse, Question, Choice, Enrollment, Answer, UserProfile
+from django.conf import settings
+
+class ChoiceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Choice
+        fields = ('id','text')
+
+class QuestionSerializer(serializers.ModelSerializer):
+    choices = ChoiceSerializer(many=True, read_only=True)
+    class Meta:
+        model = Question
+        fields = ('id','text','choices','mark')
+
+class SpecialCourseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SpecialCourse
+        fields = ('id','title','description','start_time','end_time','duration_minutes')
+
+class EnrollmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Enrollment
+        fields = ('id','user','course','enrolled_at','started','submitted','score')
+
+class SubmitAnswerSerializer(serializers.Serializer):
+    question = serializers.IntegerField()
+    choice = serializers.IntegerField(allow_null=True)
+
+class SubmitExamSerializer(serializers.Serializer):
+    answers = SubmitAnswerSerializer(many=True)
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ('registration_number', 'department')
