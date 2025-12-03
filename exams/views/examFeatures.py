@@ -3,8 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from .models import SpecialCourse, Enrollment, Question, Choice, Answer
-from .serializers import SpecialCourseSerializer, EnrollmentSerializer, QuestionSerializer, SubmitExamSerializer
+from ..models import SpecialCourse, Enrollment, Question, Choice, Answer
+from ..serializers import SpecialCourseSerializer, EnrollmentSerializer, QuestionSerializer, SubmitExamSerializer
 from django.db import transaction
 from django.http import HttpResponse
 import io
