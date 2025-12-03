@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'cloudinary_storage',
     'updates',
     'django_rq',
+    'monetization',
    
 ]
 

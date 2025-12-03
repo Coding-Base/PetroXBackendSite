@@ -28,4 +28,5 @@ urlpatterns = [
     # app includes
     path('api/', include('exams.urls')),
     path('api/', include('updates.urls')),
+    path('api/monetization/', include('monetization.urls')),
 ]
