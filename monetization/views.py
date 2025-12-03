@@ -1,7 +1,7 @@
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from .models import ActivationCode, UserActivation, MonetizationSettings
@@ -105,7 +105,8 @@ class UserActivationViewSet(viewsets.ModelViewSet):
     """Manage user activation statuses"""
     queryset = UserActivation.objects.all()
     serializer_class = UserActivationSerializer
-    permission_classes = [IsAdminUser]
+    # Default to authenticated users for this viewset; specific actions override as needed
+    permission_classes = [IsAuthenticated]
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def my_status(self, request):
@@ -168,7 +169,7 @@ class UserActivationViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )
 
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def monetization_info(self, request):
         """Get monetization info for unauthenticated feature access"""
         try:
