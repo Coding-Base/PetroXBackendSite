@@ -85,18 +85,18 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
 
 
 from rest_framework import serializers
-from .models import SpecialCourse, Question, Choice, Enrollment, Answer, UserProfile
+from .models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
 from django.conf import settings
 
 class ChoiceSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Choice
+        model = SpecialChoice
         fields = ('id','text')
 
 class QuestionSerializer(serializers.ModelSerializer):
     choices = ChoiceSerializer(many=True, read_only=True)
     class Meta:
-        model = Question
+        model = SpecialQuestion
         fields = ('id','text','choices','mark')
 
 class SpecialCourseSerializer(serializers.ModelSerializer):
@@ -106,7 +106,7 @@ class SpecialCourseSerializer(serializers.ModelSerializer):
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Enrollment
+        model = SpecialEnrollment
         fields = ('id','user','course','enrolled_at','started','submitted','score')
 
 class SubmitAnswerSerializer(serializers.Serializer):

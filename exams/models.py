@@ -40,7 +40,7 @@ class SpecialCourse(models.Model):
     def __str__(self):
         return self.title
 
-class Question(models.Model):
+class SpecialQuestion(models.Model):
     course = models.ForeignKey(SpecialCourse, on_delete=models.CASCADE, related_name='questions')
     text = models.TextField()
     mark = models.PositiveIntegerField(default=1)
@@ -48,15 +48,15 @@ class Question(models.Model):
     def __str__(self):
         return f"Q{self.id} - {self.course.title}"
 
-class Choice(models.Model):
-    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='choices')
+class SpecialChoice(models.Model):
+    question = models.ForeignKey(SpecialQuestion, on_delete=models.CASCADE, related_name='choices')
     text = models.CharField(max_length=1024)
     is_correct = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Choice {self.id} for Q{self.question.id}"
 
-class Enrollment(models.Model):
+class SpecialEnrollment(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrollments')
     course = models.ForeignKey(SpecialCourse, on_delete=models.CASCADE, related_name='enrollments')
     enrolled_at = models.DateTimeField(auto_now_add=True)
@@ -71,10 +71,10 @@ class Enrollment(models.Model):
     def __str__(self):
         return f"{self.user} -> {self.course}"
 
-class Answer(models.Model):
-    enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, related_name='answers')
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
+class SpecialAnswer(models.Model):
+    enrollment = models.ForeignKey(SpecialEnrollment, on_delete=models.CASCADE, related_name='answers')
+    question = models.ForeignKey(SpecialQuestion, on_delete=models.CASCADE)
+    choice = models.ForeignKey(SpecialChoice, on_delete=models.SET_NULL, null=True, blank=True)
     answered_at = models.DateTimeField(auto_now=True)
 
     class Meta:
