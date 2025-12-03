@@ -13,6 +13,7 @@ from django.conf import settings
 from django.db import IntegrityError
 from django.db.utils import DataError
 from ..serializers import UserSerializer
+from ..models import UserProfile
 from rest_framework.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,8 @@ class RegisterUserAPIView(APIView):
         username = request.data.get('username')
         email = request.data.get('email')
         password = request.data.get('password')
+        registration_number = request.data.get('registration_number', '')
+        department = request.data.get('department', '')
 
         # Add email validation
         if not username or not password:
@@ -38,11 +41,36 @@ class RegisterUserAPIView(APIView):
                 email=email,  # Make sure email is included
                 password=password
             )
-        except IntegrityError:
-            return Response(
-                {"detail": "Username already exists."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            
+            # Create UserProfile with registration_number and department
+            if registration_number or department:
+                UserProfile.objects.create(
+                    user=user,
+                    registration_number=registration_number if registration_number else None,
+                    department=department
+                )
+            
+        except IntegrityError as e:
+            if 'username' in str(e).lower():
+                return Response(
+                    {"detail": "Username already exists."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            elif 'email' in str(e).lower():
+                return Response(
+                    {"detail": "Email already registered."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            elif 'registration_number' in str(e).lower():
+                return Response(
+                    {"detail": "Registration number already exists."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            else:
+                return Response(
+                    {"detail": "Registration failed. Please try again."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         except Exception as e:  # Catch other potential errors
             logger.error(f"Registration error: {str(e)}")
             return Response(
