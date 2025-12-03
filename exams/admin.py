@@ -338,3 +338,102 @@ class EmailMessageAdmin(admin.ModelAdmin):
         if obj and obj.sent_at:
             return [f.name for f in self.model._meta.fields] + ['status_display']
         return super().get_readonly_fields(request, obj)
+
+
+from django.contrib import admin
+from .models import (
+    SpecialCourse,
+    SpecialQuestion,
+    SpecialChoice,
+    SpecialEnrollment,
+    SpecialAnswer,
+    UserProfile,
+)
+from django.http import HttpResponse
+import io
+try:
+    import pandas as pd
+except Exception:
+    pd = None
+
+
+# Inline to manage choices when editing a question
+class ChoiceInline(admin.TabularInline):
+    model = SpecialChoice
+    extra = 1
+
+
+# Inline to manage questions when editing a course
+class QuestionInline(admin.StackedInline):
+    model = SpecialQuestion
+    extra = 1
+    show_change_link = True
+
+
+@admin.register(SpecialCourse)
+class SpecialCourseAdmin(admin.ModelAdmin):
+    list_display = ('title', 'start_time', 'end_time', 'created_by')
+    search_fields = ('title', 'description')
+    list_filter = ('start_time', 'end_time', 'created_by')
+    inlines = [QuestionInline]
+
+
+@admin.register(SpecialQuestion)
+class SpecialQuestionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'course', 'truncated_text', 'mark')
+    search_fields = ('text',)
+    list_filter = ('course',)
+    inlines = [ChoiceInline]
+
+    def truncated_text(self, obj):
+        return obj.text[:100] + '...' if len(obj.text) > 100 else obj.text
+    truncated_text.short_description = 'Question'
+
+
+@admin.register(SpecialChoice)
+class SpecialChoiceAdmin(admin.ModelAdmin):
+    list_display = ('id', 'question', 'text', 'is_correct')
+    search_fields = ('text',)
+
+
+@admin.register(SpecialEnrollment)
+class SpecialEnrollmentAdmin(admin.ModelAdmin):
+    list_display = ('user', 'course', 'enrolled_at', 'started', 'submitted', 'score')
+    actions = ['export_results']
+
+    def export_results(self, request, queryset):
+        """Export selected enrollments to Excel, grouped by department."""
+        if pd is None:
+            self.message_user(request, 'pandas/openpyxl not installed on server.', level=messages.ERROR)
+            return
+        rows = []
+        for e in queryset.select_related('user'):
+            profile = getattr(e.user, 'profile', None)
+            rows.append({
+                'name': e.user.get_full_name() or str(e.user),
+                'registration_number': getattr(profile, 'registration_number', ''),
+                'department': getattr(profile, 'department', ''),
+                'score': e.score if e.score is not None else '',
+            })
+        df = pd.DataFrame(rows)
+        df = df.sort_values(['department', 'name'])
+        buffer = io.BytesIO()
+        writer = pd.ExcelWriter(buffer, engine='openpyxl')
+        df.to_excel(writer, index=False, sheet_name='results')
+        writer.save()
+        buffer.seek(0)
+        response = HttpResponse(buffer.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=exam_results.xlsx'
+        return response
+    export_results.short_description = 'Export selected enrollments to Excel'
+
+
+@admin.register(SpecialAnswer)
+class SpecialAnswerAdmin(admin.ModelAdmin):
+    list_display = ('enrollment', 'question', 'choice', 'answered_at')
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'registration_number', 'department', 'created_at')
+    search_fields = ('user__username', 'registration_number', 'department')
