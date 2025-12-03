@@ -24,18 +24,13 @@ class ActivationCodeAdmin(admin.ModelAdmin):
     list_filter = ['is_used', 'created_at', 'used_at']
     search_fields = ['code', 'used_by__username']
     readonly_fields = ['code', 'created_at', 'used_at', 'used_by']
-    
-    # Provide an action form to allow admins to specify how many codes to generate
-    class GenerateCodesForm(forms.Form):
-        count = forms.IntegerField(min_value=1, max_value=1000, initial=10, label='Number of codes to generate')
-
-    action_form = GenerateCodesForm
+    fields = ['code', 'is_used', 'used_by', 'created_at', 'used_at']
 
     def has_add_permission(self, request):
         # Keep default add permission (allowing admin UI add if needed)
         return True
 
-    actions = ['mark_as_unused', 'generate_codes']
+    actions = ['mark_as_unused', 'generate_ten_codes', 'generate_twenty_codes', 'generate_fifty_codes']
 
     def mark_as_unused(self, request, queryset):
         """Allow admin to reset used codes"""
@@ -44,26 +39,34 @@ class ActivationCodeAdmin(admin.ModelAdmin):
     
     mark_as_unused.short_description = "Mark selected codes as unused"
 
-    def generate_codes(self, request, queryset):
-        """Generate new activation codes in bulk. Uses the `count` value from the action form."""
-        try:
-            count = int(request.POST.get('count', 0))
-        except (TypeError, ValueError):
-            count = 0
-
-        if count <= 0:
-            self.message_user(request, 'Please provide a valid positive count to generate')
-            return
-
+    def _generate_n_codes(self, n):
+        """Helper to generate n activation codes"""
         codes = []
-        for _ in range(count):
+        for _ in range(n):
             code = uuid.uuid4().hex[:12].upper()
             codes.append(ActivationCode(code=code))
+        return ActivationCode.objects.bulk_create(codes)
 
-        ActivationCode.objects.bulk_create(codes)
-        self.message_user(request, f'{count} activation codes generated')
+    def generate_ten_codes(self, request, queryset):
+        """Generate 10 activation codes"""
+        self._generate_n_codes(10)
+        self.message_user(request, '10 activation codes generated')
+    
+    generate_ten_codes.short_description = 'Generate 10 activation codes'
 
-    generate_codes.short_description = 'Generate activation codes (use action form to set count)'
+    def generate_twenty_codes(self, request, queryset):
+        """Generate 20 activation codes"""
+        self._generate_n_codes(20)
+        self.message_user(request, '20 activation codes generated')
+    
+    generate_twenty_codes.short_description = 'Generate 20 activation codes'
+
+    def generate_fifty_codes(self, request, queryset):
+        """Generate 50 activation codes"""
+        self._generate_n_codes(50)
+        self.message_user(request, '50 activation codes generated')
+    
+    generate_fifty_codes.short_description = 'Generate 50 activation codes'
 
     def save_model(self, request, obj, form, change):
         """Ensure a generated code exists if admin adds via the regular add form."""
