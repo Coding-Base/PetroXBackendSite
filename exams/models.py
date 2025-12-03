@@ -82,27 +82,6 @@ class SpecialAnswer(models.Model):
 
 
 
-class EmailMessage(models.Model):
-    subject = models.CharField(max_length=255)
-    content = models.TextField(help_text="HTML content for the email body")
-    button_text = models.CharField(
-        max_length=50,
-        blank=True,
-        null=True,
-        help_text="Text for the action button (optional)"
-    )
-    button_link = models.URLField(
-        blank=True,
-        null=True,
-        help_text="URL for the action button (optional)"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    sent_at = models.DateTimeField(blank=True, null=True)
-
-    def __str__(self):
-        return self.subject
-
-
 class Course(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
