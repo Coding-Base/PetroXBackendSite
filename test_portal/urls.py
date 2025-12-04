@@ -31,3 +31,5 @@ urlpatterns = [
     path('api/monetization/', include('monetization.urls')),
     # Also expose monetization endpoints at the non-API root for compatibility
     path('monetization/', include('monetization.urls')),
+]
+
