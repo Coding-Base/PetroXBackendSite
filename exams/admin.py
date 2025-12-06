@@ -7,6 +7,7 @@ import socket
 import ssl
 import requests
 import gc
+import io
 
 from django.contrib import admin, messages
 from django.utils.html import format_html
@@ -180,8 +181,8 @@ class TestSessionAdmin(admin.ModelAdmin):
         return False
 
 
-    
-
+# --- Below: SpecialCourse / SpecialQuestion / SpecialChoice / SpecialEnrollment Admins ---
+# The original file repeated imports and then declared these; preserved here.
 
 from django.contrib import admin
 from .models import (
@@ -193,7 +194,7 @@ from .models import (
     UserProfile,
 )
 from django.http import HttpResponse
-import io
+
 try:
     import pandas as pd
 except Exception:
@@ -249,25 +250,33 @@ class SpecialEnrollmentAdmin(admin.ModelAdmin):
         if pd is None:
             self.message_user(request, 'pandas/openpyxl not installed on server.', level=messages.ERROR)
             return
-        rows = []
-        for e in queryset.select_related('user'):
-            profile = getattr(e.user, 'profile', None)
-            rows.append({
-                'name': e.user.get_full_name() or str(e.user),
-                'registration_number': getattr(profile, 'registration_number', ''),
-                'department': getattr(profile, 'department', ''),
-                'score': e.score if e.score is not None else '',
-            })
-        df = pd.DataFrame(rows)
-        df = df.sort_values(['department', 'name'])
-        buffer = io.BytesIO()
-        writer = pd.ExcelWriter(buffer, engine='openpyxl')
-        df.to_excel(writer, index=False, sheet_name='results')
-        writer.save()
-        buffer.seek(0)
-        response = HttpResponse(buffer.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = 'attachment; filename=exam_results.xlsx'
-        return response
+        try:
+            rows = []
+            for e in queryset.select_related('user'):
+                profile = getattr(e.user, 'profile', None)
+                rows.append({
+                    'name': e.user.get_full_name() or str(e.user),
+                    'registration_number': getattr(profile, 'registration_number', ''),
+                    'department': getattr(profile, 'department', ''),
+                    'score': e.score if e.score is not None else '',
+                })
+            df = pd.DataFrame(rows)
+            df = df.sort_values(['department', 'name'])
+            buffer = io.BytesIO()
+
+            # Use context manager to correctly flush/close writer (no writer.save())
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='results')
+
+            buffer.seek(0)
+            response = HttpResponse(buffer.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename=exam_results.xlsx'
+            return response
+        except Exception as exc:
+            logger.exception("Failed to export selected enrollments: %s", exc)
+            self.message_user(request, f"Failed to generate export: {str(exc)}", level=messages.ERROR)
+            return
+
     export_results.short_description = 'Export selected enrollments to Excel'
 
 
