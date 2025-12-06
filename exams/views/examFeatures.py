@@ -1,3 +1,4 @@
+
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -8,10 +9,15 @@ from ..serializers import SpecialCourseSerializer, EnrollmentSerializer, Questio
 from django.db import transaction
 from django.http import HttpResponse
 import io
+import logging
+
+logger = logging.getLogger(__name__)
+
 try:
     import pandas as pd
 except Exception:
     pd = None
+
 
 class SpecialCourseList(generics.ListAPIView):
     serializer_class = SpecialCourseSerializer
@@ -23,6 +29,7 @@ class SpecialCourseList(generics.ListAPIView):
         if q:
             qs = qs.filter(title__icontains=q)
         return qs
+
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -59,6 +66,7 @@ def get_enrolled_courses(request):
     
     return Response(data)
 
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def enroll_course(request, course_id):
@@ -66,6 +74,7 @@ def enroll_course(request, course_id):
     enrollment, created = SpecialEnrollment.objects.get_or_create(user=request.user, course=course)
     serializer = EnrollmentSerializer(enrollment)
     return Response(serializer.data)
+
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -82,6 +91,7 @@ def enrollment_detail(request, enrollment_id):
         data['questions'] = QuestionSerializer(questions, many=True).data
     return Response(data)
 
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def start_exam(request, enrollment_id):
@@ -91,6 +101,7 @@ def start_exam(request, enrollment_id):
     e.started = True
     e.save()
     return Response({'ok': True})
+
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -119,6 +130,7 @@ def submit_exam(request, enrollment_id):
     e.save()
     return Response({'ok': True, 'score': e.score})
 
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAdminUser])
 def finalize_due_exams(request):
@@ -142,26 +154,42 @@ def finalize_due_exams(request):
             finalized.append(e.id)
     return Response({'finalized_count': len(finalized)})
 
+
 @api_view(['GET'])
 @permission_classes([permissions.IsAdminUser])
 def export_course_results(request, course_id):
+    """
+    Export results for a given course_id as an Excel file.
+    Uses pandas/openpyxl if available.
+    """
     if pd is None:
-        return Response({'detail':'pandas/openpyxl not installed on server'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    enrollments = SpecialEnrollment.objects.filter(course_id=course_id, submitted=True).select_related('user', 'user__profile')
-    rows = []
-    for e in enrollments:
-        profile = getattr(e.user, 'profile', None)
-        rows.append({
-            'name': e.user.get_full_name() or str(e.user),
-            'registration_number': getattr(profile, 'registration_number', '') if profile else '',
-            'department': getattr(profile, 'department', '') if profile else '',
-            'score': e.score,
-        })
-    df = pd.DataFrame(rows).sort_values(['department', 'name'])
-    buffer = io.BytesIO()
-    writer = pd.ExcelWriter(buffer, engine='openpyxl')
-    df.to_excel(writer, index=False, sheet_name='results')
-    writer.save(); buffer.seek(0)
-    resp = HttpResponse(buffer.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = f'attachment; filename=results_{course_id}.xlsx'
-    return resp
+        logger.error("Pandas/openpyxl not installed on server.")
+        return Response({'detail': 'pandas/openpyxl not installed on server'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    try:
+        enrollments = SpecialEnrollment.objects.filter(course_id=course_id, submitted=True).select_related('user', 'user__profile')
+        rows = []
+        for e in enrollments:
+            profile = getattr(e.user, 'profile', None)
+            rows.append({
+                'name': e.user.get_full_name() or str(e.user),
+                'registration_number': getattr(profile, 'registration_number', '') if profile else '',
+                'department': getattr(profile, 'department', '') if profile else '',
+                'score': e.score,
+            })
+
+        df = pd.DataFrame(rows).sort_values(['department', 'name'])
+        buffer = io.BytesIO()
+
+        # Use context manager so writer is properly closed (no writer.save())
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='results')
+
+        buffer.seek(0)
+        resp = HttpResponse(buffer.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = f'attachment; filename=results_{course_id}.xlsx'
+        return resp
+
+    except Exception as exc:
+        logger.exception("Failed to export course results for course_id=%s: %s", course_id, exc)
+        return Response({'detail': f'Failed to generate excel: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
