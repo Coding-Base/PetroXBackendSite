@@ -1,22 +1,33 @@
 # exams/models.py
 from django.db import models
-from django.contrib.auth.models import User
 from django.conf import settings
-
 from django.utils import timezone
 
 User = settings.AUTH_USER_MODEL
 
+
 class UserProfile(models.Model):
     """Extended user profile with registration number and department."""
+
+    ROLE_CHOICES = (
+        ('student', 'Student'),
+        ('lecturer', 'Lecturer'),
+    )
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     registration_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     department = models.CharField(max_length=100, blank=True)
+    phone_number = models.CharField(max_length=50, blank=True, null=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def is_lecturer(self):
+        return self.role == 'lecturer'
+
     def __str__(self):
-        return f"{self.user.username}'s Profile"
+        return f"{self.user.username}'s Profile ({self.role})"
+
 
 class SpecialCourse(models.Model):
     title = models.CharField(max_length=255)
@@ -40,6 +51,7 @@ class SpecialCourse(models.Model):
     def __str__(self):
         return self.title
 
+
 class SpecialQuestion(models.Model):
     course = models.ForeignKey(SpecialCourse, on_delete=models.CASCADE, related_name='questions')
     text = models.TextField()
@@ -48,6 +60,7 @@ class SpecialQuestion(models.Model):
     def __str__(self):
         return f"Q{self.id} - {self.course.title}"
 
+
 class SpecialChoice(models.Model):
     question = models.ForeignKey(SpecialQuestion, on_delete=models.CASCADE, related_name='choices')
     text = models.CharField(max_length=1024)
@@ -55,6 +68,7 @@ class SpecialChoice(models.Model):
 
     def __str__(self):
         return f"Choice {self.id} for Q{self.question.id}"
+
 
 class SpecialEnrollment(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrollments')
@@ -71,6 +85,7 @@ class SpecialEnrollment(models.Model):
     def __str__(self):
         return f"{self.user} -> {self.course}"
 
+
 class SpecialAnswer(models.Model):
     enrollment = models.ForeignKey(SpecialEnrollment, on_delete=models.CASCADE, related_name='answers')
     question = models.ForeignKey(SpecialQuestion, on_delete=models.CASCADE)
@@ -79,7 +94,6 @@ class SpecialAnswer(models.Model):
 
     class Meta:
         unique_together = ('enrollment', 'question')
-
 
 
 class Course(models.Model):
@@ -95,7 +109,7 @@ class Question(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='questions')
     question_text = models.TextField()
     option_a = models.CharField(max_length=255)
-    year =  models.CharField(max_length=255, default='2019')
+    year = models.CharField(max_length=255, default='2019')
     option_b = models.CharField(max_length=255)
     option_c = models.CharField(max_length=255)
     option_d = models.CharField(max_length=255)
