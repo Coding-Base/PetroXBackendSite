@@ -1,9 +1,14 @@
 # exams/serializers.py
 from rest_framework import serializers
-from django.contrib.auth.models import User
-from .models import Course, Question, TestSession, GroupTest, Material
-import uuid
 from django.conf import settings
+from django.contrib.auth import get_user_model
+
+from .models import (
+    Course, Question, TestSession, GroupTest, Material,
+    SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
+)
+
+User = get_user_model()
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -36,10 +41,21 @@ class GroupTestSerializer(serializers.ModelSerializer):
         ]
 
 
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ('registration_number', 'department', 'phone_number', 'role')
+
+
 class UserSerializer(serializers.ModelSerializer):
+    profile = UserProfileSerializer(read_only=True)
+    is_staff = serializers.BooleanField(source='is_staff', read_only=True)
+    is_superuser = serializers.BooleanField(source='is_superuser', read_only=True)
+    email = serializers.EmailField(read_only=True)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email']
+        fields = ['id', 'username', 'email', 'is_staff', 'is_superuser', 'profile']
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -56,11 +72,13 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 class TestSessionSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
+
     class Meta:
         model = TestSession
         fields = ['id', 'user', 'course', 'questions', 'start_time', 'end_time', 'score', 'duration', 'question_count']
 
 
+# file upload helpers - keep as before
 class PreviewPassQuestionsSerializer(serializers.Serializer):
     file = serializers.FileField()
     question_type = serializers.ChoiceField(choices=[('multichoice', 'Multiple Choice')])
@@ -84,39 +102,37 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'question_text']
 
 
-from rest_framework import serializers
-from .models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
-from django.conf import settings
-
+# Special course serializers
 class ChoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialChoice
-        fields = ('id','text')
+        fields = ('id', 'text')
 
-class QuestionSerializer(serializers.ModelSerializer):
+
+class SpecialQuestionSerializer(serializers.ModelSerializer):
     choices = ChoiceSerializer(many=True, read_only=True)
+
     class Meta:
         model = SpecialQuestion
-        fields = ('id','text','choices','mark')
+        fields = ('id', 'text', 'choices', 'mark')
+
 
 class SpecialCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialCourse
-        fields = ('id','title','description','start_time','end_time','duration_minutes')
+        fields = ('id', 'title', 'description', 'start_time', 'end_time', 'duration_minutes')
+
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialEnrollment
-        fields = ('id','user','course','enrolled_at','started','submitted','score')
+        fields = ('id', 'user', 'course', 'enrolled_at', 'started', 'submitted', 'score')
+
 
 class SubmitAnswerSerializer(serializers.Serializer):
     question = serializers.IntegerField()
     choice = serializers.IntegerField(allow_null=True)
 
+
 class SubmitExamSerializer(serializers.Serializer):
     answers = SubmitAnswerSerializer(many=True)
-
-class UserProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UserProfile
-        fields = ('registration_number', 'department')
