@@ -3,15 +3,17 @@ from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.contrib.auth.models import User
 from django.db import IntegrityError
-from ..serializers import UserSerializer
+from ..serializers import UserSerializer, LecturerRegistrationSerializer, UserProfileSerializer
 from rest_framework.exceptions import ValidationError
-from ..models import Course, Question, TestSession, GroupTest
+from ..models import Course, Question, TestSession, GroupTest, UserProfile
 from ..serializers import CourseSerializer, GroupTestSerializer
 from rest_framework import generics
+
 class CourseListAPIView(generics.ListAPIView):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
     permission_classes = [permissions.IsAuthenticated]
+
 class RegisterUserAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -29,6 +31,8 @@ class RegisterUserAPIView(APIView):
                 email=email,
                 password=password
             )
+            # Create default student profile
+            UserProfile.objects.create(user=user, role='student')
         except IntegrityError:
             return Response(
                 {"detail": "Username already exists."},
@@ -37,3 +41,19 @@ class RegisterUserAPIView(APIView):
 
         serializer = UserSerializer(user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class LecturerRegisterAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = LecturerRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'message': 'Lecturer account created successfully'
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
