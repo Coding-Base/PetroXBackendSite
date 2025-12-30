@@ -66,11 +66,11 @@ CORS_ALLOWED_ORIGINS = [
     "https://petroxtestbackend.onrender.com",   # if needed
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Vite dev server
 ]
 
-# If you do not use cookie/session auth from the browser, leave this False
-# (you're using Bearer tokens which don't require cookies)
-CORS_ALLOW_CREDENTIALS = False
+# Allow credentials for token-based auth
+CORS_ALLOW_CREDENTIALS = True
 
 # Keep default methods and headers, and append any custom ones you need
 CORS_ALLOW_METHODS = list(default_methods)  # includes OPTIONS, GET, POST, PUT, PATCH, DELETE, HEAD
