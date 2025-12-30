@@ -1,8 +1,10 @@
 # exams/urls.py
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from .views.auth import RegisterUserAPIView
+from .views.courses import CourseListAPIView, LecturerRegisterAPIView
+from .views.lecturer import LecturerCourseViewSet, LecturerQuestionViewSet, LecturerEnrollmentViewSet, LecturerProfileView
 from .debug_views import debug_auth
-from .views.courses import CourseListAPIView
 from .views.materials import (
     MaterialUploadView, 
     MaterialDownloadView, 
@@ -25,8 +27,17 @@ from .views.sessions import (
 from .views.group_tests import CreateGroupTestAPIView, GroupTestDetailAPIView
 from .views.leaderboard import LeaderboardAPIView, user_rank, user_upload_stats
 
+# Set up router for lecturer viewsets
+router = DefaultRouter()
+router.register(r'lecturer/courses', LecturerCourseViewSet, basename='lecturer-course')
+router.register(r'lecturer/questions', LecturerQuestionViewSet, basename='lecturer-question')
+router.register(r'lecturer/enrollments', LecturerEnrollmentViewSet, basename='lecturer-enrollment')
+
 urlpatterns = [
+    path('', include(router.urls)),
+    path('lecturer/profile/', LecturerProfileView.as_view(), name='lecturer-profile'),
     path('users/', RegisterUserAPIView.as_view(), name='register-user'),
+    path('users/lecturer-register/', LecturerRegisterAPIView.as_view(), name='lecturer-register'),
     path('materials/', MaterialListView.as_view(), name='material-list'),
     path('materials/upload/', MaterialUploadView.as_view(), name='material-upload'),
     path('materials/download/<int:pk>/', MaterialDownloadView.as_view(), name='material-download'),
