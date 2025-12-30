@@ -1,14 +1,9 @@
 # exams/serializers.py
 from rest_framework import serializers
+from django.contrib.auth.models import User
+from .models import Course, Question, TestSession, GroupTest, Material
+import uuid
 from django.conf import settings
-from django.contrib.auth import get_user_model
-
-from .models import (
-    Course, Question, TestSession, GroupTest, Material,
-    SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
-)
-
-User = get_user_model()
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -41,21 +36,10 @@ class GroupTestSerializer(serializers.ModelSerializer):
         ]
 
 
-class UserProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UserProfile
-        fields = ('registration_number', 'department', 'phone_number', 'role')
-
-
 class UserSerializer(serializers.ModelSerializer):
-    profile = UserProfileSerializer(read_only=True)
-    is_staff = serializers.BooleanField(source='is_staff', read_only=True)
-    is_superuser = serializers.BooleanField(source='is_superuser', read_only=True)
-    email = serializers.EmailField(read_only=True)
-
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'is_staff', 'is_superuser', 'profile']
+        fields = ['id', 'username', 'email']
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -72,13 +56,11 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 class TestSessionSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True)
-
     class Meta:
         model = TestSession
         fields = ['id', 'user', 'course', 'questions', 'start_time', 'end_time', 'score', 'duration', 'question_count']
 
 
-# file upload helpers - keep as before
 class PreviewPassQuestionsSerializer(serializers.Serializer):
     file = serializers.FileField()
     question_type = serializers.ChoiceField(choices=[('multichoice', 'Multiple Choice')])
@@ -102,37 +84,99 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'question_text']
 
 
-# Special course serializers
+from rest_framework import serializers
+from .models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile, LecturerProfile
+from django.conf import settings
+
 class ChoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialChoice
-        fields = ('id', 'text')
+        fields = ('id','text')
 
-
-class SpecialQuestionSerializer(serializers.ModelSerializer):
+class QuestionSerializer(serializers.ModelSerializer):
     choices = ChoiceSerializer(many=True, read_only=True)
-
+    image_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = SpecialQuestion
-        fields = ('id', 'text', 'choices', 'mark')
-
+        fields = ('id','text','choices','mark','image','image_url')
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            return obj.image.url
+        return None
 
 class SpecialCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialCourse
-        fields = ('id', 'title', 'description', 'start_time', 'end_time', 'duration_minutes')
-
+        fields = ('id','title','description','start_time','end_time','duration_minutes')
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialEnrollment
-        fields = ('id', 'user', 'course', 'enrolled_at', 'started', 'submitted', 'score')
-
+        fields = ('id','user','course','enrolled_at','started','submitted','score')
 
 class SubmitAnswerSerializer(serializers.Serializer):
     question = serializers.IntegerField()
     choice = serializers.IntegerField(allow_null=True)
 
-
 class SubmitExamSerializer(serializers.Serializer):
     answers = SubmitAnswerSerializer(many=True)
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ('registration_number', 'department', 'role')
+
+
+class LecturerProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LecturerProfile
+        fields = ('id', 'user', 'name', 'department', 'faculty', 'phone', 'bio', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+class LecturerRegistrationSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
+    name = serializers.CharField(max_length=255)
+    department = serializers.CharField(max_length=255)
+    faculty = serializers.CharField(max_length=255)
+    phone = serializers.CharField(max_length=20)
+    
+    def create(self, validated_data):
+        from django.contrib.auth.models import User
+        from django.db import IntegrityError
+        
+        username = validated_data['username']
+        email = validated_data['email']
+        password = validated_data['password']
+        
+        try:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password
+            )
+        except IntegrityError:
+            raise serializers.ValidationError({"username": "Username already exists."})
+        
+        # Create UserProfile with lecturer role
+        UserProfile.objects.create(
+            user=user,
+            role='lecturer',
+            department=validated_data['department']
+        )
+        
+        # Create LecturerProfile
+        LecturerProfile.objects.create(
+            user=user,
+            name=validated_data['name'],
+            department=validated_data['department'],
+            faculty=validated_data['faculty'],
+            phone=validated_data['phone']
+        )
+        
+        return user
+
