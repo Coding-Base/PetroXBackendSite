@@ -24,20 +24,6 @@ class UserProfile(models.Model):
         return f"{self.user.username}'s Profile ({self.role})"
 
 
-class LecturerProfile(models.Model):
-    """Extended profile for lecturers with additional fields."""
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='lecturer_profile')
-    name = models.CharField(max_length=255)
-    department = models.CharField(max_length=255)
-    faculty = models.CharField(max_length=255)
-    phone = models.CharField(max_length=20)
-    bio = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Dr. {self.name} ({self.department})"
-
 class SpecialCourse(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
