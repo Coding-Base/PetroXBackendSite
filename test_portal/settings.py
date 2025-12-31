@@ -52,7 +52,7 @@ INSTALLED_APPS = [
     'updates',
     'django_rq',
     'monetization',
-   
+    'lecturer_dashboard',  # Separate lecturer app
 ]
 
 # --------------------------
@@ -216,6 +216,13 @@ if not DEBUG:
     CSRF_TRUSTED_ORIGINS = [
         "https://petroxtestbackend.onrender.com",
         "https://petrox-test-frontend.onrender.com"
+    ]
+else:
+    # Development: allow localhost CSRF
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
     ]
 
 # Ensure this is not set to a restrictive value that breaks requests
