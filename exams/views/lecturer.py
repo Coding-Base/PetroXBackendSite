@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
 
-from ..models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile, LecturerProfile
+from ..models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
 from ..serializers import SpecialCourseSerializer, QuestionSerializer
 
 
@@ -242,24 +242,14 @@ class LecturerEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class LecturerProfileView(APIView):
-    """API view to get lecturer profile"""
+    """API view to get lecturer profile - DEPRECATED
+    Use /api/lecturer/profile/ from lecturer_dashboard app instead
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        try:
-            profile = UserProfile.objects.get(user=request.user)
-            if profile.role != 'lecturer':
-                return Response(
-                    {'error': 'User is not a lecturer'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            lecturer_profile = LecturerProfile.objects.get(user=request.user)
-            from ..serializers import LecturerProfileSerializer
-            serializer = LecturerProfileSerializer(lecturer_profile)
-            return Response(serializer.data)
-        except (UserProfile.DoesNotExist, LecturerProfile.DoesNotExist):
-            return Response(
-                {'error': 'Profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # Return redirect message
+        return Response(
+            {'error': 'Endpoint deprecated. Use /api/lecturer/profile/ instead'},
+            status=status.HTTP_410_GONE
+        )
