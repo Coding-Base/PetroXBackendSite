@@ -9,7 +9,7 @@ from rest_framework_simplejwt.views import (
 )
 
 # Import auth views and the trigger_render_job directly from the modules that contain them
-from exams.views.auth import RegisterUserAPIView, GoogleAuthView
+from exams.views.auth import RegisterUserAPIView, GoogleAuthView, CurrentUserRoleView
 from exams.views.views import trigger_render_job
 
 urlpatterns = [
@@ -24,6 +24,7 @@ urlpatterns = [
     # Auth endpoints
     path('users/', RegisterUserAPIView.as_view(), name='register-user-root'),
     path('api/auth/google/', GoogleAuthView.as_view(), name='google-auth'),
+    path('api/auth/me/', CurrentUserRoleView.as_view(), name='current-user-role'),
 
     # app includes
     path('api/', include('exams.urls')),
@@ -32,4 +33,3 @@ urlpatterns = [
     # Also expose monetization endpoints at the non-API root for compatibility
     path('monetization/', include('monetization.urls')),
 ]
-
