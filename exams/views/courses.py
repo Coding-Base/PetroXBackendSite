@@ -47,13 +47,22 @@ class LecturerRegisterAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = LecturerRegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
+        try:
+            serializer = LecturerRegistrationSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.save()
+                return Response({
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'message': 'Lecturer account created successfully'
+                }, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Lecturer registration error: {str(e)}", exc_info=True)
             return Response({
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'message': 'Lecturer account created successfully'
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                'error': 'Registration failed',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
