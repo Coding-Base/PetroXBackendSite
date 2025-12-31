@@ -32,7 +32,7 @@ class RegisterUserAPIView(APIView):
                 password=password
             )
             # Create default student profile
-            UserProfile.objects.create(user=user, role='student')
+            UserProfile.objects.create(user=user)
         except IntegrityError:
             return Response(
                 {"detail": "Username already exists."},

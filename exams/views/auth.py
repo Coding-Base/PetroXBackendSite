@@ -92,7 +92,7 @@ class CurrentUserRoleView(APIView):
             return Response({
                 'username': request.user.username,
                 'email': request.user.email,
-                'role': profile.role,
+                'role': 'student',  # UserProfile is only for students now
                 'id': request.user.id
             }, status=status.HTTP_200_OK)
         except UserProfile.DoesNotExist:
