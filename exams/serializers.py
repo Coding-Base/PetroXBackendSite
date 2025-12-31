@@ -145,38 +145,68 @@ class LecturerRegistrationSerializer(serializers.Serializer):
     faculty = serializers.CharField(max_length=255)
     phone = serializers.CharField(max_length=20)
     
+    def validate_username(self, value):
+        """Check if username already exists"""
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Username already exists.")
+        return value
+    
+    def validate_email(self, value):
+        """Check if email already exists"""
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email already registered.")
+        return value
+    
     def create(self, validated_data):
         from django.contrib.auth.models import User
         from django.db import IntegrityError
+        import logging
         
-        username = validated_data['username']
-        email = validated_data['email']
-        password = validated_data['password']
+        logger = logging.getLogger(__name__)
         
         try:
+            username = validated_data['username']
+            email = validated_data['email']
+            password = validated_data['password']
+            
             user = User.objects.create_user(
                 username=username,
                 email=email,
                 password=password
             )
-        except IntegrityError:
-            raise serializers.ValidationError({"username": "Username already exists."})
-        
-        # Create UserProfile with lecturer role
-        UserProfile.objects.create(
-            user=user,
-            role='lecturer',
-            department=validated_data['department']
-        )
-        
-        # Create LecturerProfile
-        LecturerProfile.objects.create(
-            user=user,
-            name=validated_data['name'],
-            department=validated_data['department'],
-            faculty=validated_data['faculty'],
-            phone=validated_data['phone']
-        )
-        
-        return user
+            
+            try:
+                # Create UserProfile with lecturer role
+                UserProfile.objects.create(
+                    user=user,
+                    role='lecturer',
+                    department=validated_data['department']
+                )
+            except Exception as e:
+                logger.warning(f"Could not create UserProfile: {str(e)}")
+            
+            try:
+                # Create LecturerProfile
+                LecturerProfile.objects.create(
+                    user=user,
+                    name=validated_data['name'],
+                    department=validated_data['department'],
+                    faculty=validated_data['faculty'],
+                    phone=validated_data['phone']
+                )
+            except Exception as e:
+                logger.warning(f"Could not create LecturerProfile: {str(e)}")
+            
+            return user
+        except IntegrityError as e:
+            logger.error(f"IntegrityError during lecturer registration: {str(e)}")
+            if 'username' in str(e).lower():
+                raise serializers.ValidationError({"username": "Username already exists."})
+            elif 'email' in str(e).lower():
+                raise serializers.ValidationError({"email": "Email already registered."})
+            else:
+                raise serializers.ValidationError({"detail": "Registration failed. Please try again."})
+        except Exception as e:
+            logger.error(f"Error during lecturer registration: {str(e)}", exc_info=True)
+            raise serializers.ValidationError({"detail": str(e)})
 
