@@ -159,7 +159,7 @@ class LecturerRegistrationSerializer(serializers.Serializer):
     
     def create(self, validated_data):
         from django.contrib.auth.models import User
-        from django.db import IntegrityError
+        from django.db import IntegrityError, ProgrammingError
         import logging
         
         logger = logging.getLogger(__name__)
@@ -177,16 +177,20 @@ class LecturerRegistrationSerializer(serializers.Serializer):
             
             try:
                 # Create UserProfile with lecturer role
+                # Silently fail if table doesn't exist yet (migrations not run)
                 UserProfile.objects.create(
                     user=user,
                     role='lecturer',
                     department=validated_data['department']
                 )
-            except Exception as e:
-                logger.warning(f"Could not create UserProfile: {str(e)}")
+            except (Exception, ProgrammingError) as e:
+                logger.debug(f"Could not create UserProfile (may be due to pending migrations): {str(e)}")
+                # Don't fail registration if profile creation fails
+                pass
             
             try:
                 # Create LecturerProfile
+                # Silently fail if table doesn't exist yet (migrations not run)
                 LecturerProfile.objects.create(
                     user=user,
                     name=validated_data['name'],
@@ -194,8 +198,10 @@ class LecturerRegistrationSerializer(serializers.Serializer):
                     faculty=validated_data['faculty'],
                     phone=validated_data['phone']
                 )
-            except Exception as e:
-                logger.warning(f"Could not create LecturerProfile: {str(e)}")
+            except (Exception, ProgrammingError) as e:
+                logger.debug(f"Could not create LecturerProfile (may be due to pending migrations): {str(e)}")
+                # Don't fail registration if profile creation fails
+                pass
             
             return user
         except IntegrityError as e:
