@@ -85,7 +85,7 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
 
 
 from rest_framework import serializers
-from .models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile, LecturerProfile
+from .models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
 from django.conf import settings
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -129,13 +129,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = ('registration_number', 'department', 'role')
 
 
-class LecturerProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LecturerProfile
-        fields = ('id', 'user', 'name', 'department', 'faculty', 'phone', 'bio', 'created_at', 'updated_at')
-        read_only_fields = ('id', 'created_at', 'updated_at')
-
-
 class LecturerRegistrationSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField()
@@ -175,33 +168,9 @@ class LecturerRegistrationSerializer(serializers.Serializer):
                 password=password
             )
             
-            try:
-                # Create UserProfile with lecturer role
-                # Silently fail if table doesn't exist yet (migrations not run)
-                UserProfile.objects.create(
-                    user=user,
-                    role='lecturer',
-                    department=validated_data['department']
-                )
-            except (Exception, ProgrammingError) as e:
-                logger.debug(f"Could not create UserProfile (may be due to pending migrations): {str(e)}")
-                # Don't fail registration if profile creation fails
-                pass
-            
-            try:
-                # Create LecturerProfile
-                # Silently fail if table doesn't exist yet (migrations not run)
-                LecturerProfile.objects.create(
-                    user=user,
-                    name=validated_data['name'],
-                    department=validated_data['department'],
-                    faculty=validated_data['faculty'],
-                    phone=validated_data['phone']
-                )
-            except (Exception, ProgrammingError) as e:
-                logger.debug(f"Could not create LecturerProfile (may be due to pending migrations): {str(e)}")
-                # Don't fail registration if profile creation fails
-                pass
+            # Note: LecturerAccount is created in lecturer_dashboard app
+            # This serializer now only creates the User object
+            # The lecturer profile is created via /api/lecturer/register/
             
             return user
         except IntegrityError as e:
