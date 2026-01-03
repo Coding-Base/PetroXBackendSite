@@ -11,7 +11,7 @@ from django.db.models import Count, Q, Avg
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
 from rest_framework.views import APIView
 
 from ..models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
@@ -131,7 +131,7 @@ class LecturerQuestionViewSet(viewsets.ModelViewSet):
     """
     serializer_class = QuestionSerializer
     permission_classes = [permissions.IsAuthenticated, IsLecturer]
-    parser_classes = (MultiPartParser, FormParser)
+    parser_classes = (MultiPartParser, FormParser,JSONParser)
 
     def get_queryset(self):
         """Get questions for lecturer's courses only"""
@@ -253,3 +253,4 @@ class LecturerProfileView(APIView):
             {'error': 'Endpoint deprecated. Use /api/lecturer/profile/ instead'},
             status=status.HTTP_410_GONE
         )
+
