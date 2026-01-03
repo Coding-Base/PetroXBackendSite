@@ -28,8 +28,10 @@ urlpatterns = [
 
     # app includes
     path('api/', include('exams.urls')),
+    path('api/', include('lecturer_dashboard.urls')),
     path('api/', include('updates.urls')),
     path('api/monetization/', include('monetization.urls')),
     # Also expose monetization endpoints at the non-API root for compatibility
     path('monetization/', include('monetization.urls')),
 ]
+
