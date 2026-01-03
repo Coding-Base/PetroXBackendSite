@@ -8,6 +8,7 @@ from .views import LecturerRegisterView, LecturerProfileView
 app_name = 'lecturer_dashboard'
 
 urlpatterns = [
-    path('register/', LecturerRegisterView.as_view(), name='lecturer-register'),
+    path('lecturer/register/', LecturerRegisterView.as_view(), name='lecturer-register'),
     path('profile/', LecturerProfileView.as_view(), name='lecturer-profile'),
 ]
+
