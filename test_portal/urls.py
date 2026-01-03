@@ -3,18 +3,23 @@ from django.contrib import admin
 from django.urls import path, include
 
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
     TokenRefreshView,
     TokenBlacklistView,
+    # TokenObtainPairView,  <-- REMOVED THIS, WE USE OUR CUSTOM ONE NOW
 )
 
-# Import auth views and the trigger_render_job directly from the modules that contain them
-from exams.views.auth import RegisterUserAPIView, GoogleAuthView, CurrentUserRoleView
+# Import our new custom view
+from exams.views.auth import RegisterUserAPIView, GoogleAuthView, CurrentUserRoleView, CustomTokenObtainPairView
 from exams.views.views import trigger_render_job
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    
+    # === CHANGED THIS LINE ===
+    # Using CustomTokenObtainPairView instead of the default one
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # =========================
+
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
 
@@ -34,4 +39,3 @@ urlpatterns = [
     # Also expose monetization endpoints at the non-API root for compatibility
     path('monetization/', include('monetization.urls')),
 ]
-
