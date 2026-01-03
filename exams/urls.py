@@ -37,7 +37,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('lecturer/profile/', LecturerProfileView.as_view(), name='lecturer-profile'),
     path('users/', RegisterUserAPIView.as_view(), name='register-user'),
-    path('users/lecturer-register/', LecturerRegisterAPIView.as_view(), name='lecturer-register'),
+    path('lecturer/register/', LecturerRegisterAPIView.as_view(), name='lecturer-register'),
     path('materials/', MaterialListView.as_view(), name='material-list'),
     path('materials/upload/', MaterialUploadView.as_view(), name='material-upload'),
     path('materials/download/<int:pk>/', MaterialDownloadView.as_view(), name='material-download'),
@@ -68,5 +68,6 @@ urlpatterns = [
     path('admin/finalize/', examFeatures.finalize_due_exams, name='finalize-exams'),
     path('special-courses/<int:course_id>/export/', examFeatures.export_course_results, name='export-results'),
 ]
+
 
 
