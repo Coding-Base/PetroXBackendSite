@@ -17,15 +17,15 @@ from rest_framework.views import APIView
 from ..models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
 from ..serializers import SpecialCourseSerializer, QuestionSerializer
 
+# IMPORT THE LECTURER ACCOUNT MODEL
+from lecturer_dashboard.models import LecturerAccount 
+
 
 class IsLecturer(permissions.BasePermission):
     """Permission class to ensure user is a lecturer"""
     def has_permission(self, request, view):
-        try:
-            profile = UserProfile.objects.get(user=request.user)
-            return profile.role == 'lecturer'
-        except UserProfile.DoesNotExist:
-            return False
+        # FIX: Check if the user exists in the LecturerAccount table
+        return LecturerAccount.objects.filter(user=request.user).exists()
 
 
 class IsLecturerOwner(permissions.BasePermission):
