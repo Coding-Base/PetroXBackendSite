@@ -9,6 +9,7 @@ app_name = 'lecturer_dashboard'
 
 urlpatterns = [
     path('lecturer/register/', LecturerRegisterView.as_view(), name='lecturer-register'),
-    path('profile/', LecturerProfileView.as_view(), name='lecturer-profile'),
+    path('lecturer/profile/', LecturerProfileView.as_view(), name='lecturer-profile'),
 ]
+
 
