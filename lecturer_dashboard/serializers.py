@@ -6,15 +6,21 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import LecturerAccount
 
-
 class LecturerAccountSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
+    # Add this field so the frontend knows this is a lecturer
+    role = serializers.SerializerMethodField()
 
     class Meta:
         model = LecturerAccount
-        fields = ('id', 'username', 'email', 'name', 'department', 'faculty', 'phone', 'bio', 'is_verified', 'created_at', 'updated_at')
+        # Add 'role' to the fields tuple
+        fields = ('id', 'username', 'email', 'name', 'department', 'faculty', 'phone', 'bio', 'is_verified', 'created_at', 'updated_at', 'role')
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+    # This function tells DRF what to put in the 'role' field
+    def get_role(self, obj):
+        return "lecturer"
 
 
 class LecturerRegistrationSerializer(serializers.Serializer):
