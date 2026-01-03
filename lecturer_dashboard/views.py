@@ -25,6 +25,7 @@ class LecturerRegisterView(APIView):
                     'id': user.id,
                     'username': user.username,
                     'email': user.email,
+                    'role': 'lecturer',  # <--- Added this line
                     'message': 'Lecturer account created successfully'
                 }, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -43,6 +44,7 @@ class LecturerProfileView(APIView):
     def get(self, request):
         try:
             lecturer_account = LecturerAccount.objects.get(user=request.user)
+            # This serializer will now include "role": "lecturer"
             serializer = LecturerAccountSerializer(lecturer_account)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except LecturerAccount.DoesNotExist:
