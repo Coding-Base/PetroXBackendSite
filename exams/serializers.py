@@ -1,14 +1,24 @@
 # exams/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Course, Question, TestSession, GroupTest, Material
+from .models import (
+    Course, Question, TestSession, GroupTest, Material, 
+    SpecialCourse, SpecialQuestion, SpecialChoice, 
+    SpecialEnrollment, SpecialAnswer, UserProfile
+)
 import uuid
 from django.conf import settings
+import logging
 
+logger = logging.getLogger(__name__)
+
+# ==========================================
+#  1. GENERAL FEATURES SERIALIZERS
+# ==========================================
 
 class MaterialSerializer(serializers.ModelSerializer):
-    file = serializers.FileField(write_only=True, required=False)  # File input for upload only
-    file_url = serializers.SerializerMethodField()  # File URL for download
+    file = serializers.FileField(write_only=True, required=False)
+    file_url = serializers.SerializerMethodField()
     course_name = serializers.CharField(source='course.name', read_only=True)
 
     class Meta:
@@ -17,7 +27,6 @@ class MaterialSerializer(serializers.ModelSerializer):
         read_only_fields = ['uploaded_by', 'uploaded_at', 'file_url', 'course_name']
 
     def get_file_url(self, obj):
-        """Return the stored Cloudinary URL"""
         return obj.file if obj.file else None
 
 
@@ -25,14 +34,8 @@ class GroupTestSerializer(serializers.ModelSerializer):
     class Meta:
         model = GroupTest
         fields = [
-            'id',
-            'name',
-            'course',
-            'question_count',
-            'duration_minutes',
-            'created_by',
-            'invitees',
-            'scheduled_start',
+            'id', 'name', 'course', 'question_count', 'duration_minutes',
+            'created_by', 'invitees', 'scheduled_start'
         ]
 
 
@@ -84,44 +87,88 @@ class QuestionStatusSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'question_text']
 
 
-from rest_framework import serializers
-from .models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
-from django.conf import settings
+# ==========================================
+#  2. SPECIAL EXAMS: STUDENT VIEW (SECURE)
+# ==========================================
 
 class ChoiceSerializer(serializers.ModelSerializer):
+    """
+    For Students: Hides the 'is_correct' field so they cannot cheat via network inspection.
+    """
     class Meta:
         model = SpecialChoice
-        fields = ('id','text')
+        fields = ('id', 'text') 
 
-class QuestionSerializer(serializers.ModelSerializer):
+class SpecialQuestionSerializer(serializers.ModelSerializer):
+    """
+    For Students: Uses the secure ChoiceSerializer.
+    """
     choices = ChoiceSerializer(many=True, read_only=True)
     image_url = serializers.SerializerMethodField()
     
     class Meta:
         model = SpecialQuestion
-        fields = ('id','text','choices','mark','image','image_url')
+        fields = ('id', 'text', 'choices', 'mark', 'image', 'image_url')
     
     def get_image_url(self, obj):
         if obj.image:
             return obj.image.url
         return None
 
+
+# ==========================================
+#  3. SPECIAL EXAMS: LECTURER VIEW (FULL ACCESS)
+# ==========================================
+
+class LecturerChoiceSerializer(serializers.ModelSerializer):
+    """
+    For Lecturers: Includes 'is_correct' so they can verify answers in the dashboard.
+    """
+    class Meta:
+        model = SpecialChoice
+        fields = ('id', 'text', 'is_correct')
+
+class LecturerQuestionSerializer(serializers.ModelSerializer):
+    """
+    For Lecturers: Uses the full LecturerChoiceSerializer.
+    """
+    choices = LecturerChoiceSerializer(many=True, read_only=True)
+    image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SpecialQuestion
+        fields = ('id', 'text', 'choices', 'mark', 'image', 'image_url')
+
+    def get_image_url(self, obj):
+        if obj.image:
+            return obj.image.url
+        return None
+
+
+# ==========================================
+#  4. SPECIAL EXAMS: SHARED & UTILS
+# ==========================================
+
 class SpecialCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialCourse
-        fields = ('id','title','description','start_time','end_time','duration_minutes')
+        fields = ('id', 'title', 'description', 'start_time', 'end_time', 'duration_minutes')
+
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = SpecialEnrollment
-        fields = ('id','user','course','enrolled_at','started','submitted','score')
+        fields = ('id', 'user', 'course', 'enrolled_at', 'started', 'submitted', 'score')
+
 
 class SubmitAnswerSerializer(serializers.Serializer):
     question = serializers.IntegerField()
     choice = serializers.IntegerField(allow_null=True)
 
+
 class SubmitExamSerializer(serializers.Serializer):
     answers = SubmitAnswerSerializer(many=True)
+
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -139,49 +186,34 @@ class LecturerRegistrationSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
     
     def validate_username(self, value):
-        """Check if username already exists"""
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError("Username already exists.")
         return value
     
     def validate_email(self, value):
-        """Check if email already exists"""
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Email already registered.")
         return value
     
     def create(self, validated_data):
-        from django.contrib.auth.models import User
-        from django.db import IntegrityError, ProgrammingError
-        import logging
-        
-        logger = logging.getLogger(__name__)
+        from django.db import IntegrityError
         
         try:
-            username = validated_data['username']
-            email = validated_data['email']
-            password = validated_data['password']
-            
             user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password
+                username=validated_data['username'],
+                email=validated_data['email'],
+                password=validated_data['password']
             )
-            
-            # Note: LecturerAccount is created in lecturer_dashboard app
-            # This serializer now only creates the User object
-            # The lecturer profile is created via /api/lecturer/register/
-            
+            # LecturerAccount creation is handled in the View, not here
             return user
         except IntegrityError as e:
-            logger.error(f"IntegrityError during lecturer registration: {str(e)}")
+            logger.error(f"IntegrityError: {str(e)}")
             if 'username' in str(e).lower():
                 raise serializers.ValidationError({"username": "Username already exists."})
             elif 'email' in str(e).lower():
                 raise serializers.ValidationError({"email": "Email already registered."})
             else:
-                raise serializers.ValidationError({"detail": "Registration failed. Please try again."})
+                raise serializers.ValidationError({"detail": "Registration failed."})
         except Exception as e:
-            logger.error(f"Error during lecturer registration: {str(e)}", exc_info=True)
+            logger.error(f"Error: {str(e)}")
             raise serializers.ValidationError({"detail": str(e)})
-
