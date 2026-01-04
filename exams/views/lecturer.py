@@ -88,32 +88,46 @@ class LecturerCourseViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def export_results(self, request, pk=None):
-        """Export course results to CSV"""
+        """Export course results to CSV, grouped by department"""
         course = self.get_object()
+        
+        # Fetch submitted enrollments with related user and profile data
+        # Ordering by department first ensures grouping in the CSV
         enrollments = SpecialEnrollment.objects.filter(
             course=course,
             submitted=True
-        ).select_related('user')
+        ).select_related('user', 'user__profile').order_by('user__profile__department', 'user__last_name')
 
-        # 1. Create the HttpResponse with text/csv content type
-        # This fixes the 'bytes-like object' error by writing text directly to the response stream
         response = HttpResponse(content_type='text/csv')
-        
-        # 2. Set the filename
         filename = f"course_{course.id}_results_{datetime.now().strftime('%Y%m%d')}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
-        # 3. Create the CSV writer using the response object
         writer = csv.writer(response)
         
-        # 4. Write header
-        writer.writerow(['Student Name', 'Username', 'Email', 'Score', 'Submitted At', 'Course Title'])
+        # Updated Header with new columns
+        writer.writerow([
+            'Full Name', 
+            'Reg Number', 
+            'Department', 
+            'Email', 
+            'Score', 
+            'Submitted At', 
+            'Course Title'
+        ])
         
-        # 5. Write data rows
         for enrollment in enrollments:
+            # Safely access profile data
+            profile = getattr(enrollment.user, 'profile', None)
+            reg_number = getattr(profile, 'registration_number', 'N/A') if profile else 'N/A'
+            department = getattr(profile, 'department', 'N/A') if profile else 'N/A'
+            
+            # Use get_full_name if available, otherwise username
+            full_name = enrollment.user.get_full_name() or enrollment.user.username
+
             writer.writerow([
-                enrollment.user.get_full_name() or enrollment.user.username,
-                enrollment.user.username,
+                full_name,
+                reg_number,
+                department,
                 enrollment.user.email,
                 enrollment.score,
                 enrollment.submitted_at.strftime('%Y-%m-%d %H:%M:%S') if enrollment.submitted_at else '',
