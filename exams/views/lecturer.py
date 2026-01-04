@@ -1,7 +1,7 @@
-import csv
-from io import BytesIO
-from datetime import datetime
+# exams/views/lecturer.py
 
+import csv
+from datetime import datetime
 from django.http import HttpResponse
 from django.db.models import Count, Q, Avg
 from rest_framework import viewsets, status, permissions
@@ -11,7 +11,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
 
 from ..models import SpecialCourse, SpecialQuestion, SpecialChoice, SpecialEnrollment, SpecialAnswer, UserProfile
-from ..serializers import SpecialCourseSerializer, LecturerQuestionSerializer 
+from ..serializers import SpecialCourseSerializer, LecturerQuestionSerializer
 from lecturer_dashboard.models import LecturerAccount 
 
 class IsLecturer(permissions.BasePermission):
@@ -21,7 +21,7 @@ class IsLecturer(permissions.BasePermission):
 class LecturerCourseViewSet(viewsets.ModelViewSet):
     serializer_class = SpecialCourseSerializer
     permission_classes = [permissions.IsAuthenticated, IsLecturer]
-    parser_classes = (MultiPartParser, FormParser)
+    parser_classes = (MultiPartParser, FormParser, JSONParser) # JSONParser added here
 
     def get_queryset(self):
         return SpecialCourse.objects.filter(created_by=self.request.user)
@@ -64,13 +64,24 @@ class LecturerCourseViewSet(viewsets.ModelViewSet):
             'failure_rate': round(failure_rate, 2),
         })
 
+    # --- FIX IS HERE ---
     @action(detail=True, methods=['get'])
     def export_results(self, request, pk=None):
+        """Export course results to CSV"""
         course = self.get_object()
         enrollments = SpecialEnrollment.objects.filter(course=course, submitted=True).select_related('user')
-        output = BytesIO()
-        writer = csv.writer(output)
+
+        # Create the HttpResponse object with the appropriate CSV header.
+        response = HttpResponse(content_type='text/csv')
+        filename = f"course_{course.id}_results_{datetime.now().strftime('%Y%m%d')}.csv"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        writer = csv.writer(response)
+        
+        # Write header
         writer.writerow(['Student Name', 'Username', 'Email', 'Score', 'Submitted At', 'Course Title'])
+        
+        # Write data
         for enrollment in enrollments:
             writer.writerow([
                 enrollment.user.get_full_name() or enrollment.user.username,
@@ -80,16 +91,13 @@ class LecturerCourseViewSet(viewsets.ModelViewSet):
                 enrollment.submitted_at.strftime('%Y-%m-%d %H:%M:%S') if enrollment.submitted_at else '',
                 course.title
             ])
-        output.seek(0)
-        response = HttpResponse(output.getvalue(), content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="course_{course.id}_results.csv"'
+
         return response
+    # -------------------
 
 class LecturerQuestionViewSet(viewsets.ModelViewSet):
-    # Use the serializer that includes 'is_correct'
     serializer_class = LecturerQuestionSerializer
     permission_classes = [permissions.IsAuthenticated, IsLecturer]
-    # Add JSONParser so bulk_create works
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_queryset(self):
@@ -118,7 +126,7 @@ class LecturerQuestionViewSet(viewsets.ModelViewSet):
         try:
             course = SpecialCourse.objects.get(id=course_id, created_by=request.user)
         except SpecialCourse.DoesNotExist:
-            return Response({'error': 'Course not found or permission denied'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Course not found'}, status=status.HTTP_404_NOT_FOUND)
 
         created_questions = []
         for q_data in questions_data:
