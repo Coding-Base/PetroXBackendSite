@@ -6,7 +6,7 @@ import csv
 from datetime import datetime
 
 from django.http import HttpResponse
-from django.db.models import Count, Q, Avg
+from django.db.models import Count, Q, Avg, Sum
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -104,24 +104,17 @@ class LecturerCourseViewSet(viewsets.ModelViewSet):
 
         writer = csv.writer(response)
         
-        # Updated Header with new columns
-        writer.writerow([
-            'Full Name', 
-            'Reg Number', 
-            'Department', 
-            'Email', 
-            'Score', 
-            'Submitted At', 
-            'Course Title'
-        ])
+        # Updated Header
+        writer.writerow(['Full Name', 'Reg Number', 'Department', 'Email', 'Score', 'Submitted At', 'Course Title'])
         
+        # Write data rows
         for enrollment in enrollments:
-            # Safely access profile data
+            # Safely get profile data
             profile = getattr(enrollment.user, 'profile', None)
             reg_number = getattr(profile, 'registration_number', 'N/A') if profile else 'N/A'
             department = getattr(profile, 'department', 'N/A') if profile else 'N/A'
             
-            # Use get_full_name if available, otherwise username
+            # Prefer Full Name over Username
             full_name = enrollment.user.get_full_name() or enrollment.user.username
 
             writer.writerow([
@@ -223,7 +216,7 @@ class LecturerEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def course_enrollments(self, request):
-        """Get enrollments by course with statistics"""
+        """Get enrollments by course with statistics and nested User info"""
         course_id = request.query_params.get('course_id')
         
         if not course_id:
@@ -240,13 +233,41 @@ class LecturerEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        enrollments = SpecialEnrollment.objects.filter(course=course)
+        # Fetch enrollments with user profile data
+        enrollments = SpecialEnrollment.objects.filter(course=course).select_related('user', 'user__profile')
         
-        serializer = EnrollmentSerializer(enrollments, many=True)
+        # Calculate Total Marks for the Course to calculate raw scores
+        # Sum of all question marks in this course
+        total_marks = SpecialQuestion.objects.filter(course=course).aggregate(Sum('mark'))['mark__sum'] or 0
+
+        # Manually construct response data to include nested profile info
+        # This replaces the EnrollmentSerializer for this specific view to avoid "user": ID issues
+        enrollment_data = []
+        for env in enrollments:
+            profile = getattr(env.user, 'profile', None)
+            
+            enrollment_data.append({
+                "id": env.id,
+                "score": env.score,
+                "submitted": env.submitted,
+                "enrolled_at": env.enrolled_at,
+                "started": env.started,
+                "user": {
+                    "username": env.user.username,
+                    "email": env.user.email,
+                    "first_name": env.user.first_name,
+                    "last_name": env.user.last_name,
+                    "profile": {
+                        "department": getattr(profile, 'department', 'N/A'),
+                        "registration_number": getattr(profile, 'registration_number', 'N/A')
+                    }
+                }
+            })
         
         return Response({
             'course': SpecialCourseSerializer(course).data,
-            'enrollments': serializer.data,
+            'enrollments': enrollment_data,
+            'total_marks': total_marks,  # Send total marks so frontend can show "10/15"
             'total': enrollments.count(),
             'submitted': enrollments.filter(submitted=True).count(),
             'pending': enrollments.filter(submitted=False).count(),
@@ -254,14 +275,11 @@ class LecturerEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class LecturerProfileView(APIView):
-    """API view to get lecturer profile - DEPRECATED
-    Use /api/lecturer/profile/ from lecturer_dashboard app instead
-    """
+    """API view to get lecturer profile - DEPRECATED"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # Return redirect message
         return Response(
             {'error': 'Endpoint deprecated. Use /api/lecturer/profile/ instead'},
             status=status.HTTP_410_GONE
-        )
+)
