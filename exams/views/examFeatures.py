@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from ..models import SpecialCourse, SpecialEnrollment, SpecialQuestion, SpecialChoice, SpecialAnswer
-from ..serializers import SpecialCourseSerializer, EnrollmentSerializer, QuestionSerializer, SubmitExamSerializer
+from ..serializers import SpecialCourseSerializer, EnrollmentSerializer, SpecialQuestionSerializer, SubmitExamSerializer
 from django.db import transaction
 from django.http import HttpResponse
 import io
@@ -18,7 +18,6 @@ try:
 except Exception:
     pd = None
 
-
 class SpecialCourseList(generics.ListAPIView):
     serializer_class = SpecialCourseSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -30,14 +29,11 @@ class SpecialCourseList(generics.ListAPIView):
             qs = qs.filter(title__icontains=q)
         return qs
 
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_enrolled_courses(request):
-    """Get all courses the user has enrolled for, with pagination."""
     enrollments = SpecialEnrollment.objects.filter(user=request.user).select_related('course').order_by('-enrolled_at')
     
-    # Pagination
     page = int(request.query_params.get('page', 1))
     page_size = int(request.query_params.get('page_size', 10))
     start = (page - 1) * page_size
@@ -66,7 +62,6 @@ def get_enrolled_courses(request):
     
     return Response(data)
 
-
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def enroll_course(request, course_id):
@@ -74,7 +69,6 @@ def enroll_course(request, course_id):
     enrollment, created = SpecialEnrollment.objects.get_or_create(user=request.user, course=course)
     serializer = EnrollmentSerializer(enrollment)
     return Response(serializer.data)
-
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -88,9 +82,9 @@ def enrollment_detail(request, enrollment_id):
     }
     if e.course.has_started() and not e.submitted:
         questions = SpecialQuestion.objects.filter(course=e.course).prefetch_related('choices')
-        data['questions'] = QuestionSerializer(questions, many=True).data
+        # Use SpecialQuestionSerializer (Student View - Hides is_correct)
+        data['questions'] = SpecialQuestionSerializer(questions, many=True).data
     return Response(data)
-
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -102,34 +96,47 @@ def start_exam(request, enrollment_id):
     e.save()
     return Response({'ok': True})
 
-
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 @transaction.atomic
 def submit_exam(request, enrollment_id):
-    e = get_object_or_404(SpecialEnrollment, id=enrollment_id, user=request.user)
+    # Better Error Handling for Debugging
+    try:
+        e = SpecialEnrollment.objects.get(id=enrollment_id)
+    except SpecialEnrollment.DoesNotExist:
+        return Response({'detail': f'Enrollment ID {enrollment_id} not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+    if e.user != request.user:
+        return Response({'detail': 'You do not own this enrollment.'}, status=status.HTTP_403_FORBIDDEN)
+
     if e.submitted:
         return Response({'detail': 'Already submitted.'}, status=status.HTTP_400_BAD_REQUEST)
+        
     serializer = SubmitExamSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     answers = serializer.validated_data['answers']
+    
     total_score = 0
     total_possible = 0
+    
     for a in answers:
         q = get_object_or_404(SpecialQuestion, id=a['question'])
         selected_choice = None
         if a.get('choice'):
             selected_choice = SpecialChoice.objects.filter(id=a['choice'], question=q).first()
+        
         SpecialAnswer.objects.update_or_create(enrollment=e, question=q, defaults={'choice': selected_choice})
+        
         total_possible += q.mark
         if selected_choice and selected_choice.is_correct:
             total_score += q.mark
+            
     e.score = (total_score / total_possible) * 100 if total_possible else 0
     e.submitted = True
     e.submitted_at = timezone.now()
     e.save()
+    
     return Response({'ok': True, 'score': e.score})
-
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAdminUser])
@@ -154,14 +161,9 @@ def finalize_due_exams(request):
             finalized.append(e.id)
     return Response({'finalized_count': len(finalized)})
 
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAdminUser])
 def export_course_results(request, course_id):
-    """
-    Export results for a given course_id as an Excel file.
-    Uses pandas/openpyxl if available.
-    """
     if pd is None:
         logger.error("Pandas/openpyxl not installed on server.")
         return Response({'detail': 'pandas/openpyxl not installed on server'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -180,8 +182,6 @@ def export_course_results(request, course_id):
 
         df = pd.DataFrame(rows).sort_values(['department', 'name'])
         buffer = io.BytesIO()
-
-        # Use context manager so writer is properly closed (no writer.save())
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='results')
 
