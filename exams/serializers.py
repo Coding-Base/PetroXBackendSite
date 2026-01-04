@@ -137,7 +137,7 @@ class LecturerQuestionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = SpecialQuestion
-        fields = ('id', 'text', 'choices', 'mark', 'image', 'image_url')
+        fields = ('id', 'course', 'text', 'choices', 'mark', 'image', 'image_url')
 
     def get_image_url(self, obj):
         if obj.image:
@@ -217,3 +217,4 @@ class LecturerRegistrationSerializer(serializers.Serializer):
         except Exception as e:
             logger.error(f"Error: {str(e)}")
             raise serializers.ValidationError({"detail": str(e)})
+
