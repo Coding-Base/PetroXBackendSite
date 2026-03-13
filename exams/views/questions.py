@@ -115,6 +115,10 @@ class PreviewPassQuestionsView(APIView):
             raise ParseError("Unsupported file format. Use PDF, DOCX, or TXT")
 
     def parse_questions(self, text):
+        """
+        Split extracted text into individual question blocks.
+        Handles various question numbering formats.
+        """
         # Normalize text for consistent parsing
         text = re.sub(r'\r\n', '\n', text)  # Standardize line endings
         text = re.sub(r' +', ' ', text)      # Collapse multiple spaces
@@ -124,31 +128,39 @@ class PreviewPassQuestionsView(APIView):
         if not text:
             return []
         
-        # Split text into individual question blocks
-        # This regex looks for question numbers like "1.", "2)", "(3)", etc.
-        question_blocks = re.split(r'\n\s*(\d+[.)]|\(\d+\))\s*', text)
+        # More flexible splitting that handles various question numbering formats:
+        # 1. 1), 1., 1: followed by space(s)
+        # 2. (1), (1), (1. followed by space(s)
+        # 3. Multiple spaces or newlines before number
+        question_split_pattern = r'\n\s*(?:^|\n)(?:\d+[.):,]|\(\d+\)|\)?\s*\d+[\s.]|Q\d*[.):,])\s+'
         
-        # If we didn't find any question blocks, treat the whole text as one question
-        if len(question_blocks) <= 1:
-            return [self.parse_question_block(text)]
+        # Split on question boundaries
+        question_blocks = re.split(question_split_pattern, text, flags=re.MULTILINE)
         
-        # The first element is usually text before first question, which we skip
+        # Filter and process question blocks
         questions = []
-        for i in range(1, len(question_blocks), 2):
-            question_number = question_blocks[i].strip()
-            question_content = question_blocks[i+1].strip()
+        for block in question_blocks:
+            block = block.strip()
             
-            # Skip empty content
-            if not question_content:
+            # Skip empty blocks and blocks that are too short
+            if not block or len(block) < 5:
                 continue
-                
+            
+            # Skip blocks that look like headers or page markers
+            if len(block) < 20 and block.isupper():
+                continue
+            
             try:
-                question_data = self.parse_question_block(question_content)
-                questions.append(question_data)
+                question_data = self.parse_question_block(block)
+                
+                # Only add if we have meaningful content
+                if question_data.get('text') and len(question_data.get('text', '')) > 5:
+                    questions.append(question_data)
             except Exception as e:
-                logger.error(f"Error parsing question {question_number}: {str(e)}")
+                logger.warning(f"Error parsing question block: {str(e)}")
+                # Still capture the block even if parsing partially fails
                 questions.append({
-                    "text": f"Error parsing question: {question_content[:200]}...",
+                    "text": block[:150].strip(),
                     "optionA": "",
                     "optionB": "",
                     "optionC": "",
@@ -159,42 +171,142 @@ class PreviewPassQuestionsView(APIView):
         return questions
 
     def parse_question_block(self, block):
-        # Extract question text (everything before first option)
-        question_text = block
+        """
+        Robustly parse a question block to extract question text, options, and answer.
+        Handles various PDF formatting styles.
+        """
+        question_text = block.strip()
         options = {'A': '', 'B': '', 'C': '', 'D': ''}
         answer = ''
         
-        # Try to find options in the block
-        option_pattern = r'\n\s*([a-dA-D])[.)]\s*(.*?)(?=\n\s*[a-dA-D][.)]|\n\s*Answer:|\Z)'
-        option_matches = re.findall(option_pattern, block, re.DOTALL | re.IGNORECASE)
+        # Step 1: Extract answer first (it's often at the end or marked clearly)
+        answer = self._extract_answer(block)
         
-        if option_matches:
-            # Extract question text (everything before first option)
-            first_option_pos = block.find(option_matches[0][0] + ')') or block.find(option_matches[0][0] + '.')
-            if first_option_pos != -1:
-                question_text = block[:first_option_pos].strip()
-            
-            # Process found options
-            for letter, option_text in option_matches:
-                letter = letter.upper()
-                if letter in options:
-                    # Remove option prefix if it exists
-                    clean_text = re.sub(r'^\s*[a-dA-D][.)]\s*', '', option_text).strip()
-                    options[letter] = clean_text
+        # Step 2: Robustly extract all options with flexible patterns
+        option_dict = self._extract_all_options(block)
+        options.update(option_dict)
         
-        # Look for answer pattern (case-insensitive)
-        answer_match = re.search(r'Answer:\s*([a-dA-D])', block)
-        if answer_match:
-            answer = answer_match.group(1).upper()
+        # Step 3: Extract question text (everything before first option)
+        if option_dict:
+            question_text = self._extract_question_text(block, option_dict)
         
         return {
-            "text": question_text,
-            "optionA": options['A'],
-            "optionB": options['B'],
-            "optionC": options['C'],
-            "optionD": options['D'],
+            "text": question_text.strip(),
+            "optionA": options.get('A', '').strip(),
+            "optionB": options.get('B', '').strip(),
+            "optionC": options.get('C', '').strip(),
+            "optionD": options.get('D', '').strip(),
             "correct_answer": answer
         }
+    
+    def _extract_answer(self, text):
+        """
+        Extract the correct answer from various formats:
+        - Answer: A
+        - Correct answer: B
+        - Ans: C
+        - Answer is D
+        - [D]
+        - etc.
+        """
+        # Try multiple patterns for answer extraction
+        patterns = [
+            r'(?:Answer|Correct\s+answer|Ans)[:\s]+([A-D])',  # Answer: A or Correct answer: B
+            r'(?:answer|Answer)\s+(?:is|=)\s*([A-D])',  # Answer is A
+            r'\[([A-D])\]\s*(?:\n|$)',  # [A] on its own line
+            r'(?:^|\n)\s*([A-D])\s*(?:\n|$)',  # Single letter on own line (after other content)
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                return match.group(1).upper()
+        
+        return ''
+    
+    def _extract_all_options(self, text):
+        """
+        Extract options (A, B, C, D) with flexible pattern matching.
+        Handles various formatting styles:
+        - A) option text
+        - A. option text
+        - A: option text
+        - A option text
+        - a) option text (case insensitive)
+        """
+        options = {}
+        
+        # More flexible option patterns that handle inline and newline formats
+        option_patterns = [
+            # Standard formats: A) text, A. text, A: text
+            r'^\s*([A-D])[.):]\s*(.+?)(?=^\s*[A-D][.):]\s|^[A-D]\s|$)',
+            # Inline format: A text (space separated)
+            r'^\s*([A-D])\s+([^A-D][^A-D]*?)(?=^\s*[A-D][.):]\s|^\s*[A-D]\s|$)',
+        ]
+        
+        for option_letter in ['A', 'B', 'C', 'D']:
+            found = False
+            
+            # Try different variations of finding option letter
+            for pattern in [
+                rf'(?:^|\n)\s*{option_letter}[.):]\s*(.+?)(?=(?:^|\n)\s*[A-D][.):]\s|(?:^|\n)\s*[A-D]\s|[Aa]nswer:|$)',
+                rf'(?:^|\n)\s*{option_letter}\s+(.+?)(?=(?:^|\n)\s*[A-D][.):]\s|(?:^|\n)\s*[A-D]\s|[Aa]nswer:|$)',
+            ]:
+                match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
+                if match and match.group(1):
+                    option_text = match.group(1).strip()
+                    # Clean up the option text - remove continuation markers
+                    option_text = re.sub(r'\n\s+', ' ', option_text)  # Replace newlines with spaces
+                    option_text = option_text.split('\n')[0].strip()  # Get first line only
+                    
+                    if option_text and len(option_text) > 0:
+                        options[option_letter] = option_text
+                        found = True
+                        break
+            
+            # If not found, try a more lenient search
+            if not found:
+                # Look for letter followed by any content that doesn't look like the next option
+                lenient_pattern = rf'{option_letter}[.):]\s*([^\n{{0,200}}])'
+                match = re.search(lenient_pattern, text)
+                if match:
+                    option_text = match.group(1).strip()
+                    # Clean up
+                    option_text = re.sub(r'^[A-D][.):]\s*', '', option_text).strip()
+                    option_text = option_text.split('\n')[0].split(option_letter.upper() if option_letter < 'D' else 'Answer')[0].strip()
+                    if option_text:
+                        options[option_letter] = option_text
+        
+        return options
+    
+    def _extract_question_text(self, block, option_dict):
+        """
+        Extract question text by finding the content before the first option marker.
+        """
+        # Find the position of the first option
+        first_option_pos = float('inf')
+        first_option_letter = None
+        
+        for letter in ['A', 'B', 'C', 'D']:
+            # Look for pattern like "A)" or "A." or "A:"
+            for sep in ['.', ')', ':']:
+                pattern = f'{letter}{sep}'
+                pos = block.find(pattern)
+                if pos != -1 and pos < first_option_pos:
+                    first_option_pos = pos
+                    first_option_letter = letter
+        
+        if first_option_pos != float('inf'):
+            question_text = block[:first_option_pos].strip()
+        else:
+            # No options found, return whole block
+            question_text = block.strip()
+        
+        # Clean up question text - remove extra whitespace but preserve structure
+        question_text = re.sub(r'\n+', ' ', question_text)
+        question_text = re.sub(r'\s+', ' ', question_text).strip()
+        
+        return question_text
 
 class UploadPassQuestionsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
