@@ -195,3 +195,6 @@ class LecturerRegistrationSerializer(serializers.Serializer):
             logger.error(f"Error during lecturer registration: {str(e)}", exc_info=True)
             raise serializers.ValidationError({"detail": str(e)})
 
+# Backwards-compatible aliases expected by other modules
+LecturerQuestionSerializer = QuestionSerializer
+
